@@ -1014,9 +1014,19 @@ export class Menus {
     );
   }
 
-  lobby(): void {
+  lobby(waited = 0): void {
     const app = this.app;
     const net = app.net;
+    // Lobbystatus kann kurz nach der Bestätigung eintreffen
+    if (!net.lobby) {
+      if (waited > 3000 || net.status !== 'online') {
+        this.toast('Lobby nicht verfügbar', true);
+        this.lobbyConnect();
+        return;
+      }
+      window.setTimeout(() => this.lobby(waited + 100), 100);
+      return;
+    }
     const s = this.screen();
     const leave = () => {
       net.leaveLobby();

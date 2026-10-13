@@ -1376,3 +1376,31 @@ table.res .pos {
     display: none;
   }
 }
+@media (max-height: 480px) {
+  .hud-pos canvas {
+    width: 96px !important;
+    height: 96px !important;
+  }
+  .hud-pos .posbox {
+    font-size: 28px;
+  }
+  .hud-dash {
+    transform: scale(0.72);
+    transform-origin: bottom right;
+  }
+  .hud-driver {
+    transform: scale(0.72);
+    transform-origin: bottom left;
+  }
+  .hud-tower {
+    transform: scale(0.8);
+    transform-origin: top left;
+  }
+  .hud-top .timer .val {
+    font-size: 18px;
+  }
+  .lights .col i {
+    width: 22px;
+    height: 22px;
+  }
+}

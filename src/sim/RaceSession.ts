@@ -124,6 +124,10 @@ export class RaceSession implements ISession {
   readonly openEnded: boolean;
   /** Spieler wird nach Zieleinlauf von der KI gesteuert */
   private playerAutopilot: AIDriver | null = null;
+  /** Qualifying: KI-Runden werden im Hintergrund in Zeitscheiben simuliert */
+  private qualiQueue: Driver[] = [];
+  private qualiRun: { driver: Driver; car: Car; ai: AIDriver; lt: LapTracker; prev: number; t: number } | null = null;
+  private readonly qualiTimes = new Map<string, number>();
 
   constructor(cfg: SessionConfig, kind: SessionKind, gridOrder?: string[]) {
     this.cfg = cfg;
@@ -242,6 +246,56 @@ export class RaceSession implements ISession {
       c.prevS = c.car.st.s;
       this.savePrev(c);
     }
+    if (kind === 'qualifying') this.qualiQueue = ALL_DRIVERS.filter((d) => d.id !== playerDriver.id);
+  }
+
+  /** Simuliert KI-Qualifyingrunden schrittweise (Zeitbudget in ms). Gibt true zurück, wenn fertig. */
+  advanceQualiSim(budgetMs: number): boolean {
+    const t0 = now();
+    const diff = getDifficulty(this.cfg.difficulty);
+    const env: StepEnv = { weather: this.cfg.weather, slipstream: 0, frozen: false, wearScale: 0, fuelUse: false };
+    const dt = 1 / 60;
+    while (now() - t0 < budgetMs) {
+      if (!this.qualiRun) {
+        const d = this.qualiQueue.shift();
+        if (!d) return true;
+        const team = getTeam(d.teamId);
+        const car = new Car(makeCarParams(team.perf));
+        car.assists = { tc: 2, abs: true, steering: false, autoGear: true, stability: 0 };
+        car.st.fuel = 12;
+        car.st.compound = this.cfg.weather === 'wet' ? 'inter' : 'soft';
+        const wetF = this.cfg.weather === 'wet' ? 0.97 + 0.03 * d.skill.wet : 1;
+        const skill = makeAISkill(d.skill.pace, 0, d.skill.consistency, diff.aiGrip * wetF);
+        const ai = new AIDriver(car, this.track, this.line, skill, this.cfg.weather, (this.cfg.seed ^ d.number * 2654435761) >>> 0);
+        const s0 = this.track.wrapS(-350);
+        car.placeAt(this.track, s0, this.track.raceLine[this.track.indexAt(s0)], 55);
+        this.qualiRun = { driver: d, car, ai, lt: new LapTracker(this.track.length, this.track.sectors[0], this.track.sectors[1]), prev: car.st.s, t: 0 };
+      }
+      const r = this.qualiRun;
+      for (let k = 0; k < 30; k++) {
+        const inp = r.ai.update(dt, [], 0, true);
+        r.car.step(inp, dt / 2, this.track, env);
+        collideWalls(r.car, this.track);
+        r.car.step(inp, dt / 2, this.track, env);
+        collideWalls(r.car, this.track);
+        if (r.ai.wantsReset) {
+          r.car.placeAt(this.track, r.car.st.s, this.track.raceLine[this.track.indexAt(r.car.st.s)]);
+          r.ai.onReset();
+          r.lt.invalid = true;
+        }
+        r.t += dt;
+        r.lt.update(r.prev, r.car.st.s, r.t - dt, r.t);
+        r.prev = r.car.st.s;
+        if (r.lt.completed >= 1 || r.t > 240) {
+          const lap = r.lt.lastLap;
+          // ungültige oder fehlende Runde: Ersatzwert aus dem Geschwindigkeitsprofil
+          this.qualiTimes.set(r.driver.id, lap !== null && !r.lt.invalid ? lap : r.ai.profile.lapTime * 1.04);
+          this.qualiRun = null;
+          break;
+        }
+      }
+    }
+    return false;
   }
 
   /** Startet die Ampelsequenz (Rennen). */
@@ -394,6 +448,7 @@ export class RaceSession implements ISession {
 
     if (this.kind === 'race') this.updatePositions();
     else this.player.position = 1;
+    if (this.kind === 'qualifying' && (this.qualiRun || this.qualiQueue.length)) this.advanceQualiSim(0.4);
 
     // Ende der Sitzung
     if (this.kind === 'race' && this.phase === 'racing') {
@@ -549,10 +604,10 @@ export class RaceSession implements ISession {
       c.cut.active = false;
       const gained = c.progress - c.cut.progress0 - (st.odometer - c.cut.odo0) * 0.97;
       if (this.kind === 'race' && c.isPlayer) {
-        if (gained > 14) {
+        if (gained > 7) {
           c.penalty += 5;
           this.emit({ type: 'message', text: 'Abkürzung: +5 s Zeitstrafe', tone: 'bad', carId: c.id });
-        } else if (gained > 4) {
+        } else if (gained > 3) {
           c.warnings++;
           if (c.warnings % 3 === 0) {
             c.penalty += 5;
@@ -696,24 +751,19 @@ export class RaceSession implements ISession {
     });
   }
 
-  /** Qualifying-Ergebnis: Spielerzeit + geschätzte KI-Zeiten. */
+  /** Qualifying-Ergebnis: Spielerzeit + simulierte KI-Runden. */
   buildQualiResults(): ResultRow[] {
-    const diff = getDifficulty(this.cfg.difficulty);
+    // Restliche KI-Runden fertig simulieren (falls der Spieler sehr schnell war)
+    while (!this.advanceQualiSim(50)) {
+      /* weiter */
+    }
     const rows: { driver: Driver; time: number | null; carId: number }[] = [];
     const player = this.player;
     rows.push({ driver: player.driver, time: player.quali, carId: 0 });
     let id = 1;
     for (const d of ALL_DRIVERS) {
       if (d.id === player.driver.id) continue;
-      const team = getTeam(d.teamId);
-      const car = new Car(makeCarParams(team.perf));
-      car.st.fuel = 12;
-      const wetF = this.cfg.weather === 'wet' ? 0.97 + 0.03 * d.skill.wet : 1;
-      const skill = makeAISkill(d.skill.pace, d.skill.racecraft, d.skill.consistency, diff.aiGrip * wetF);
-      const prof = computeSpeedProfile(this.track, this.line, car, this.cfg.weather, skill.grip, skill.brake);
-      // Kalibrierung: simulierte Runden liegen ~3,3 % über der Profilschätzung
-      const t = prof.lapTime * 1.033 * (1 + (this.rng() - 0.5) * 0.006 * (1.5 - d.skill.consistency));
-      rows.push({ driver: d, time: t, carId: id++ });
+      rows.push({ driver: d, time: this.qualiTimes.get(d.id) ?? null, carId: id++ });
     }
     rows.sort((a, b) => (a.time ?? 1e9) - (b.time ?? 1e9));
     const pole = rows[0].time ?? 0;
@@ -728,7 +778,7 @@ export class RaceSession implements ISession {
       bestLap: r.time,
       pitStops: 0,
       penalty: 0,
-      status: 'Im Ziel',
+      status: r.time === null ? 'DNF' : 'Im Ziel',
     }));
   }
 
@@ -738,6 +788,10 @@ export class RaceSession implements ISession {
     this.events.length = 0;
     return e;
   }
+}
+
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
 function fmt(t: number): string {

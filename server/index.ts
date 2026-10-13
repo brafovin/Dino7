@@ -595,8 +595,8 @@ io.on('connection', (socket) => {
     socketLobby.set(socket.id, lobby);
     lobby.add(socket, name);
     log(`Lobby ${code} erstellt von ${name}`);
-    reply({ ok: true, data: { code, id: socket.id } });
     lobby.broadcast();
+    reply({ ok: true, data: { code, id: socket.id } });
   });
 
   socket.on('lobby:join', (payload: unknown, ack: unknown) => {
@@ -614,8 +614,8 @@ io.on('connection', (socket) => {
     socketLobby.set(socket.id, lobby);
     lobby.add(socket, name);
     log(`Lobby ${code}: ${name} tritt bei`);
-    reply({ ok: true, data: { code, id: socket.id } });
     lobby.broadcast();
+    reply({ ok: true, data: { code, id: socket.id } });
   });
 
   socket.on('lobby:leave', () => leave(socket, 'verlassen'));

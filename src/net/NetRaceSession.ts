@@ -138,8 +138,15 @@ export class NetRaceSession implements ISession {
         st.vx = 0;
         st.vy = 0;
         st.yawRate = 0;
-        st.trackIdx = -1;
-        this.player.prevS = this.track.indexAt(0);
+        // Streckenbezug neu bestimmen, damit keine falsche Zieldurchfahrt erkannt wird
+        const proj = { i: 0, s: 0, d: 0, y: 0, tx: 0, tz: 1, dist2: 0 };
+        this.track.project(m.x, m.z, -1, proj);
+        st.trackIdx = proj.i;
+        st.s = proj.s;
+        st.d = proj.d;
+        st.y = proj.y;
+        this.player.prevS = proj.s;
+        this.events.push({ type: 'reset', carId: this.player.id });
         this.events.push({ type: 'message', text: `Server-Korrektur: ${m.reason}`, tone: 'warn', carId: this.player.id });
       }),
       net.on('results', (m) => this.onResults(m)),
