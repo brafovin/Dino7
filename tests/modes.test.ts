@@ -5,6 +5,7 @@ import { AIDriver } from '../src/shared/ai';
 import { emptyInput } from '../src/shared/carPhysics';
 import type { SessionConfig } from '../src/sim/config';
 import { RaceSession, type SessionEvent } from '../src/sim/RaceSession';
+import { LapTrace } from '../src/sim/LapTrace';
 
 let failures = 0;
 let passes = 0;
@@ -215,6 +216,23 @@ console.log('\n▶ Nässe & Schwierigkeitsgrade');
   const b = new RaceSession({ ...base, difficulty: 'beginner', aiCount: 0 }, 'practice');
   const e = new RaceSession({ ...base, difficulty: 'expert', aiCount: 0 }, 'practice');
   check(b.player.car.assists.stability > 0.5 && e.player.car.assists.stability === 0, 'Anfänger mit Stabilitätsassistent, Experte ohne');
+}
+
+// ------------------------------------------------------------------ Delta & Geisterauto
+console.log('\n▶ Delta-Zeit & Geisterauto');
+{
+  const tr = new LapTrace();
+  // Referenzrunde: konstant 50 m/s auf einer Geraden
+  for (let s = 0; s <= 1000; s += 10) tr.add(s, s / 50, s, 0, 0, 0.1);
+  check(Math.abs((tr.timeAt(505) ?? -1) - 10.1) < 1e-6, 'Referenzzeit an beliebiger Position interpoliert');
+  const pose = [0, 0, 0, 0];
+  check(tr.poseAt(4.0, pose) && Math.abs(pose[0] - 200) < 1e-6, 'Geisterauto-Position zum Zeitpunkt t');
+  const restored = LapTrace.from(tr.serialize());
+  check(restored.s.length === tr.s.length && Math.abs((restored.timeAt(777) ?? 0) - (tr.timeAt(777) ?? 1)) < 1e-3, 'Geisterdaten speichern/laden (localStorage-Format)');
+  // eigene Runde 2 % langsamer -> Delta positiv
+  const myT = 505 / 49;
+  check(myT - (tr.timeAt(505) ?? 0) > 0.15, 'Delta positiv, wenn langsamer als die Bestzeit');
+  check(tr.timeAt(-5) === null && tr.timeAt(2000) === null, 'kein Delta außerhalb der aufgezeichneten Runde');
 }
 
 console.log(`\n${passes} bestanden, ${failures} fehlgeschlagen`);

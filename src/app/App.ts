@@ -275,6 +275,8 @@ export class App {
     const escHandler = (e: KeyboardEvent) => {
       if (this.settings.data.controls.bindings.pause.includes(e.code) && this.race === race && race.paused) {
         e.preventDefault();
+        // Taste nicht an die Spieleingabe weiterreichen, sonst öffnet sich die Pause sofort wieder
+        e.stopImmediatePropagation();
         window.removeEventListener('keydown', escHandler, true);
         resume();
       }
