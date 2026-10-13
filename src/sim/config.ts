@@ -15,6 +15,8 @@ export interface AssistSettings {
   autoReset: boolean;
   /** Boxengassen-Assistent: fährt automatisch durch die Boxengasse zur Box und wieder hinaus */
   pitAssist: boolean;
+  /** Bremshinweis: Bremslinie quer über die Strecke + „BREMSEN“ im HUD */
+  brakeHint: boolean;
 }
 
 export interface DifficultyDef {
@@ -35,6 +37,7 @@ export interface DifficultyDef {
     brake: boolean[];
     autoReset: boolean[];
     pitAssist: boolean[];
+    brakeHint: boolean[];
   };
   defaults: AssistSettings;
 }
@@ -51,8 +54,8 @@ export const DIFFICULTIES: DifficultyDef[] = [
     aiGrip: 0.84,
     aiRacecraft: 0.4,
     stability: 0.9,
-    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: BOTH, brake: BOTH, autoReset: BOTH, pitAssist: BOTH },
-    defaults: { tc: 'high', abs: true, line: 'full', steering: true, brake: true, autoReset: true, pitAssist: true },
+    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: BOTH, brake: BOTH, autoReset: BOTH, pitAssist: BOTH, brakeHint: BOTH },
+    defaults: { tc: 'high', abs: true, line: 'full', steering: true, brake: true, autoReset: true, pitAssist: true, brakeHint: true },
   },
   {
     id: 'easy',
@@ -61,8 +64,8 @@ export const DIFFICULTIES: DifficultyDef[] = [
     aiGrip: 0.89,
     aiRacecraft: 0.55,
     stability: 0.45,
-    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: BOTH, brake: BOTH, autoReset: BOTH, pitAssist: BOTH },
-    defaults: { tc: 'high', abs: true, line: 'full', steering: true, brake: false, autoReset: true, pitAssist: true },
+    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: BOTH, brake: BOTH, autoReset: BOTH, pitAssist: BOTH, brakeHint: BOTH },
+    defaults: { tc: 'high', abs: true, line: 'full', steering: true, brake: false, autoReset: true, pitAssist: true, brakeHint: true },
   },
   {
     id: 'normal',
@@ -71,8 +74,8 @@ export const DIFFICULTIES: DifficultyDef[] = [
     aiGrip: 0.93,
     aiRacecraft: 0.7,
     stability: 0,
-    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: BOTH, brake: BOTH, autoReset: BOTH, pitAssist: BOTH },
-    defaults: { tc: 'low', abs: true, line: 'corners', steering: false, brake: false, autoReset: true, pitAssist: true },
+    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: BOTH, brake: BOTH, autoReset: BOTH, pitAssist: BOTH, brakeHint: BOTH },
+    defaults: { tc: 'low', abs: true, line: 'corners', steering: false, brake: false, autoReset: true, pitAssist: true, brakeHint: true },
   },
   {
     id: 'hard',
@@ -81,8 +84,8 @@ export const DIFFICULTIES: DifficultyDef[] = [
     aiGrip: 0.96,
     aiRacecraft: 0.85,
     stability: 0,
-    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: [false], brake: [false], autoReset: BOTH, pitAssist: BOTH },
-    defaults: { tc: 'low', abs: true, line: 'off', steering: false, brake: false, autoReset: false, pitAssist: true },
+    allowed: { tc: ALL_TC, abs: BOTH, line: ALL_LINE, steering: [false], brake: [false], autoReset: BOTH, pitAssist: BOTH, brakeHint: BOTH },
+    defaults: { tc: 'low', abs: true, line: 'off', steering: false, brake: false, autoReset: false, pitAssist: true, brakeHint: false },
   },
   {
     id: 'expert',
@@ -91,8 +94,8 @@ export const DIFFICULTIES: DifficultyDef[] = [
     aiGrip: 0.98,
     aiRacecraft: 1.0,
     stability: 0,
-    allowed: { tc: ['off', 'low'], abs: BOTH, line: ['off'], steering: [false], brake: [false], autoReset: [false], pitAssist: BOTH },
-    defaults: { tc: 'off', abs: false, line: 'off', steering: false, brake: false, autoReset: false, pitAssist: false },
+    allowed: { tc: ['off', 'low'], abs: BOTH, line: ['off'], steering: [false], brake: [false], autoReset: [false], pitAssist: BOTH, brakeHint: [false] },
+    defaults: { tc: 'off', abs: false, line: 'off', steering: false, brake: false, autoReset: false, pitAssist: false, brakeHint: false },
   },
 ];
 
@@ -112,6 +115,7 @@ export function sanitizeAssists(a: AssistSettings, diff: Difficulty): AssistSett
     brake: pick(a.brake, d.allowed.brake),
     autoReset: pick(a.autoReset, d.allowed.autoReset),
     pitAssist: pick(a.pitAssist ?? true, d.allowed.pitAssist),
+    brakeHint: pick(a.brakeHint ?? d.defaults.brakeHint, d.allowed.brakeHint),
   };
 }
 

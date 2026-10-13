@@ -418,7 +418,7 @@ export class Menus {
     const d = getDifficulty(st.data.difficulty);
     const a = st.data.assists;
     const panel = h('div', { class: 'panel' }, h('h4', null, `Fahrhilfen (${d.name})`));
-    const yesNo = (key: 'abs' | 'steering' | 'brake' | 'autoReset' | 'pitAssist', label: string, hint: string) =>
+    const yesNo = (key: 'abs' | 'steering' | 'brake' | 'autoReset' | 'pitAssist' | 'brakeHint', label: string, hint: string) =>
       h(
         'div',
         { class: 'field' },
@@ -455,6 +455,7 @@ export class Menus {
           (v) => st.update((x) => (x.assists.line = v)),
         ),
       ),
+      yesNo('brakeHint', 'Bremshinweis (Bremslinie)', 'Zeigt vor Kurven eine rote Linie quer über die Strecke, wo du – passend zu deinem Tempo – bremsen musst, plus „BREMSEN“ mit Zieltempo im HUD. Gelb = nur Gas wegnehmen.'),
       yesNo('steering', 'Lenkhilfe', 'Begrenzt den Lenkwinkel auf den Haftgrenzbereich und lenkt bei Übersteuern gegen.'),
       yesNo('brake', 'Bremsassistent', 'Bremst automatisch vor Kurven, wenn du zu schnell bist.'),
       yesNo('autoReset', 'Automatische Rücksetzung', 'Setzt dich zurück, wenn du neben der Strecke stecken bleibst.'),
@@ -851,6 +852,19 @@ export class Menus {
               app.settings.data.assists.line,
               (v) => {
                 app.settings.update((x) => (x.assists.line = v));
+                app.applyRuntimeSettings();
+              },
+            ),
+          ),
+          h(
+            'div',
+            { class: 'field' },
+            h('div', { class: 'lbl' }, 'Bremshinweis (Bremslinie)'),
+            segmented(
+              [false, true].map((v) => ({ label: v ? 'Ein' : 'Aus', value: v, disabled: !getDifficulty(app.settings.data.difficulty).allowed.brakeHint.includes(v) })),
+              app.settings.data.assists.brakeHint,
+              (v) => {
+                app.settings.update((x) => (x.assists.brakeHint = v));
                 app.applyRuntimeSettings();
               },
             ),

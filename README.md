@@ -226,9 +226,9 @@ die Leistung deines Autos):
 |----------|----------------------|--------|
 | Anfänger | 84 %, vorsichtig     | alle verfügbar, starke Stabilitätshilfe, Standard: TC hoch, ABS, volle Ideallinie, Lenk- und Bremsassistent |
 | Einfach  | 89 %                 | alle verfügbar, leichte Stabilitätshilfe |
-| Normal   | 93 %                 | alle verfügbar, keine Stabilitätshilfe |
+| Normal   | 93 %                 | alle verfügbar, keine Stabilitätshilfe, Bremshinweis an |
 | Schwer   | 96 %                 | kein Brems-/Lenkassistent |
-| Experte  | 98 %, aggressiv      | nur TC (aus/niedrig) und ABS, keine Ideallinie, kein Autoreset |
+| Experte  | 98 %, aggressiv      | nur TC (aus/niedrig) und ABS, keine Ideallinie, kein Bremshinweis, kein Autoreset |
 
 **Getriebe:** Automatik (schaltet nach Drehzahl/Last, schaltet beim Bremsen herunter) oder
 Manuell (Schaltblitz-LEDs, zu hoher Gang = kaum Leistung, Drehzahlbegrenzer, Überdrehschutz
@@ -236,7 +236,18 @@ verweigert zu frühes Runterschalten, aggressives Runterschalten erzeugt starke 
 
 **Fahrhilfen:** Traktionskontrolle (Aus/Niedrig/Hoch), ABS (Aus/Ein), Ideallinie
 (Aus/Nur Kurven/Vollständig – grün = Gas, gelb = lupfen, rot = bremsen), Lenkhilfe (Ein/Aus),
-Bremsassistent (Ein/Aus), automatische Rücksetzung (Ein/Aus), Boxengassen-Assistent (Ein/Aus).
+Bremsassistent (Ein/Aus), **Bremshinweis / Bremslinie** (Ein/Aus), automatische Rücksetzung (Ein/Aus),
+Boxengassen-Assistent (Ein/Aus).
+
+**Bremshinweis (Bremslinie):** Vor jeder Kurve, in der du bei deinem aktuellen Tempo bremsen musst,
+steht am Bremspunkt eine rote Linie quer über die Fahrbahn (Pfeilmarkierung am Boden, rot-weiße
+Pfosten und Banner „BREMSEN“ darüber – aus der Ferne sichtbar). Gelb mit „GAS WEG“ bedeutet: nur
+lupfen. Im HUD erscheint ca. 2,5 s vorher „Bremsen in … m“ mit Zieltempo und Countdown-Balken, am
+Punkt selbst „BREMSEN!“. Der Punkt wird aus deinem Geschwindigkeitsprofil und deinem
+aktuellen Tempo berechnet (schneller = früher bremsen), liegt bewusst ca. 0,25 s vor dem
+spätestmöglichen Punkt (Reaktionszeit) und bleibt kurz vor dem Erreichen fest stehen. Ist die
+Ideallinie eingeschaltet, beginnt ihr roter Abschnitt exakt an derselben Stelle. Standard: an
+(Anfänger bis Normal), aus bei Schwer, bei Experte nicht verfügbar; auch im Pausemenü umschaltbar.
 
 **Weitere:** Grafikqualität (Niedrig/Mittel/Hoch), FPS-Anzeige, Lenkempfindlichkeit,
 Gamepad-Lenkkurve und -Totzone, Vibration, Lautstärken (Gesamt, Motor, Umgebung, Effekte),

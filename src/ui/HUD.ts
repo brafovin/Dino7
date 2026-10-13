@@ -58,6 +58,8 @@ export interface HudData {
   mapDots: MapDot[];
   raceTime: number | null;
   pit: { title: string; detail: string; tone: 'info' | 'warn' | 'good'; progress: number | null } | null;
+  /** Bremshinweis: Text, Detail, Fortschritt bis zum Bremspunkt (0..1), dringend = Bremspunkt erreicht */
+  brake?: { title: string; detail: string; tone: 'brake' | 'lift'; urgent: boolean; progress: number } | null;
 }
 
 const LED_COUNT = 15;
@@ -80,6 +82,10 @@ export class HUD {
   private pitTitle: HTMLDivElement;
   private pitDetail: HTMLDivElement;
   private pitBar: HTMLElement;
+  private brakeEl: HTMLDivElement;
+  private brakeTitle: HTMLDivElement;
+  private brakeDetail: HTMLDivElement;
+  private brakeBar: HTMLElement;
   private lastTower = '';
 
   constructor(parent: HTMLElement) {
@@ -184,7 +190,15 @@ export class HUD {
       (this.pitDetail = h('div', { class: 'd' })),
       h('div', { class: 'bar' }, this.pitBar),
     );
-    this.root.append(tower, top, pos, driver, dash, gaps, this.pitEl, this.msgWrap, this.lightsEl, this.bigEl, this.hintEl, this.fpsEl);
+    this.brakeBar = h('i');
+    this.brakeEl = h(
+      'div',
+      { class: 'hud-brake', style: 'display:none' },
+      (this.brakeTitle = h('div', { class: 't' })),
+      (this.brakeDetail = h('div', { class: 'd' })),
+      h('div', { class: 'bar' }, this.brakeBar),
+    );
+    this.root.append(tower, top, pos, driver, dash, gaps, this.pitEl, this.brakeEl, this.msgWrap, this.lightsEl, this.bigEl, this.hintEl, this.fpsEl);
     parent.appendChild(this.root);
   }
 
@@ -332,6 +346,15 @@ export class HUD {
       (this.pitBar.parentElement as HTMLElement).style.display = d.pit.progress === null ? 'none' : '';
       if (d.pit.progress !== null) this.pitBar.style.width = `${Math.round(d.pit.progress * 100)}%`;
     } else this.pitEl.style.display = 'none';
+    const b = d.brake;
+    if (b) {
+      this.brakeEl.style.display = '';
+      setText(this.brakeTitle, b.title);
+      setText(this.brakeDetail, b.detail);
+      this.brakeEl.dataset.tone = b.tone;
+      setClass(this.brakeEl, 'urgent', b.urgent);
+      this.brakeBar.style.width = `${Math.round(b.progress * 100)}%`;
+    } else this.brakeEl.style.display = 'none';
     this.minimap.draw(d.mapDots);
   }
 

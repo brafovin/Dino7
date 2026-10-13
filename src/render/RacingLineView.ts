@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { RaceLineData } from '../shared/racingLine';
 import type { Track } from '../shared/track';
+import type { BrakeAdvice } from '../sim/brakeAdvice';
 import type { LineMode } from '../sim/config';
 
 const pt = { x: 0, y: 0, z: 0, tx: 0, tz: 1 };
@@ -44,7 +45,7 @@ export class RacingLineView {
   }
 
   /** Aktualisiert die Farben im Sichtfenster vor dem Spieler. */
-  update(mode: LineMode, s: number, speed: number, profile: Float32Array): void {
+  update(mode: LineMode, s: number, speed: number, profile: Float32Array, brake: BrakeAdvice | null = null): void {
     this.mesh.visible = mode !== 'off';
     if (mode === 'off') return;
     const tr = this.track;
@@ -70,7 +71,13 @@ export class RacingLineView {
       let g = 0.9;
       let b = 0.25;
       let important = false;
-      if (speed > vT + 2.5) {
+      if (brake && brake.strong && tr.inRange(i * tr.spacing, brake.sBrake, brake.sApex)) {
+        // Bremszone ab dem angezeigten Bremspunkt (gleiche Berechnung wie die Bremslinie)
+        r = 0.95;
+        g = 0.15;
+        b = 0.12;
+        important = true;
+      } else if (speed > vT + 2.5) {
         // muss vor diesem Punkt bremsen
         r = 0.95;
         g = 0.15;

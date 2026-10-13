@@ -1448,3 +1448,87 @@ table.res .pos {
     height: 22px;
   }
 }
+
+/* Bremshinweis */
+.hud-brake {
+  position: absolute;
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 190px;
+  padding: 6px 14px 7px;
+  border-radius: 10px;
+  text-align: center;
+  background: rgba(14, 16, 22, 0.72);
+  border: 2px solid #e8140c;
+  pointer-events: none;
+}
+.hud-brake[data-tone='lift'] {
+  border-color: #f5b400;
+}
+.hud-brake .t {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ff5a4a;
+  line-height: 1.1;
+}
+.hud-brake[data-tone='lift'] .t {
+  color: #ffd24a;
+}
+.hud-brake .d {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+.hud-brake .bar {
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.hud-brake .bar i {
+  display: block;
+  height: 100%;
+  background: #e8140c;
+}
+.hud-brake[data-tone='lift'] .bar i {
+  background: #f5b400;
+}
+.hud-brake.urgent {
+  background: rgba(200, 10, 4, 0.88);
+  border-color: #ffffff;
+  animation: brakePulse 0.32s ease-in-out infinite alternate;
+}
+.hud-brake.urgent .t {
+  color: #ffffff;
+  font-size: 24px;
+}
+.hud-brake.urgent[data-tone='lift'] {
+  background: rgba(190, 130, 0, 0.9);
+}
+.hud-brake.urgent .bar {
+  display: none;
+}
+@keyframes brakePulse {
+  from {
+    transform: translateX(-50%) scale(1);
+  }
+  to {
+    transform: translateX(-50%) scale(1.07);
+  }
+}
+@media (max-height: 520px) {
+  .hud-brake {
+    top: 64px;
+    min-width: 150px;
+    padding: 4px 10px;
+  }
+  .hud-brake .t {
+    font-size: 16px;
+  }
+}

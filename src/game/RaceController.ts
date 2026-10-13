@@ -5,6 +5,7 @@ import type { DriveInput, Input } from '../input/Input';
 import { CameraRig } from '../render/CameraRig';
 import { buildCar, type CarMeshParts, setCarCompound } from '../render/CarModel';
 import { Particles, Rain, SkidMarks } from '../render/Effects';
+import { BrakeMarker } from '../render/BrakeMarker';
 import { PitCrew, type PitCarInfo } from '../render/PitCrew';
 import { RacingLineView } from '../render/RacingLineView';
 import type { Renderer } from '../render/Renderer';
@@ -13,6 +14,7 @@ import { type BestLapRecord, loadBestLaps, saveBestLap, type Settings } from '..
 import { type CarInput, COMPOUNDS, emptyInput, SURFACE_INFO } from '../shared/carPhysics';
 import { clamp, formatTime, wrapAngle } from '../shared/math';
 import { SURF_ASPHALT, SURF_CURB, SURF_GRASS, SURF_GRAVEL } from '../shared/track';
+import { BrakeHintTracker, type BrakeState } from '../sim/brakeAdvice';
 import type { ISession } from '../sim/ISession';
 import { LapTrace } from '../sim/LapTrace';
 import type { SessionCar, SessionEvent } from '../sim/RaceSession';
@@ -50,6 +52,9 @@ export class RaceController {
   private readonly skids = new SkidMarks(this.lowQ() ? 1200 : 3000);
   private rain: Rain | null = null;
   private lineView: RacingLineView;
+  private readonly brakeMarker: BrakeMarker;
+  private readonly brakeTracker = new BrakeHintTracker();
+  private brakeState: BrakeState | null = null;
   private readonly pitCrew: PitCrew;
   private readonly pitInfos: PitCarInfo[] = [];
   private lastPitDoneAt = -100;
@@ -106,6 +111,8 @@ export class RaceController {
     }
     this.lineView = new RacingLineView(session.track, session.line);
     this.scene.add(this.lineView.mesh);
+    this.brakeMarker = new BrakeMarker(session.track);
+    this.scene.add(this.brakeMarker.group);
     this.pitCrew = new PitCrew(session.track);
     this.scene.add(this.pitCrew.group);
     this.scene.add(this.smoke.points, this.sparks.points, this.skids.mesh);
@@ -256,8 +263,15 @@ export class RaceController {
       if (incoming || c.pitTimer > 0) this.pitInfos.push({ teamIndex: c.teamIndex, incoming, stopped: c.pitTimer > 0 });
     }
     this.pitCrew.update(this.paused ? 0 : dt, this.pitInfos, s.phase === 'racing' || s.phase === 'finished');
-    // Ideallinie
-    this.lineView.update(this.settings.assists.line, pst.s, pst.vx, s.playerProfile.v);
+    // Bremshinweis (Bremslinie) und Ideallinie
+    const me = s.player;
+    const hintOn = this.settings.assists.brakeHint && s.phase === 'racing' && !me.finished && !s.pitPilot && me.pitTimer <= 0 && !s.inPitLane(me);
+    if (!hintOn) {
+      this.brakeTracker.reset();
+      this.brakeState = null;
+    } else if (!this.paused) this.brakeState = this.brakeTracker.update(s.track, s.playerProfile.v, pst.s, pst.vx);
+    this.brakeMarker.update(this.paused ? 0 : dt, this.brakeState, pst.vx);
+    this.lineView.update(this.settings.assists.line, pst.s, pst.vx, s.playerProfile.v, this.brakeState?.advice ?? null);
     // Startampel
     const lights = s.phase === 'countdown' ? s.lights : -1;
     if (lights !== this.lastLightCount) {
@@ -630,6 +644,24 @@ export class RaceController {
       const dist = Math.round(s.track.deltaS(st.s, s.track.pit.sEntry) < 0 ? s.track.length + s.track.deltaS(st.s, s.track.pit.sEntry) : s.track.deltaS(st.s, s.track.pit.sEntry));
       pit = { title: 'Box, Box!', detail: `Einfahrt in ${dist} m · ${cmpName} · ${s.track.pit.side > 0 ? 'links' : 'rechts'} rein`, tone: 'warn', progress: null };
     }
+    // Bremshinweis im HUD (ab ca. 2,6 s vor dem Bremspunkt)
+    let brake: HudData['brake'] = null;
+    const bs = this.brakeState;
+    if (bs && !pit) {
+      const lead = Math.max(70, Math.max(0, st.vx) * 2.6);
+      if (bs.dist <= lead) {
+        const reached = bs.dist <= 0;
+        const strong = bs.advice.strong;
+        const kmh = Math.round(bs.advice.vTarget * 3.6);
+        brake = {
+          title: strong ? (reached ? 'Bremsen!' : 'Bremsen') : 'Gas weg',
+          detail: reached ? `auf ${kmh} km/h` : `in ${Math.max(0, Math.round(bs.dist))} m · ${kmh} km/h`,
+          tone: strong ? 'brake' : 'lift',
+          urgent: reached && (strong ? p.input.brake < 0.5 : p.input.throttle > 0.3),
+          progress: clamp(1 - bs.dist / lead, 0, 1),
+        };
+      }
+    }
     return {
       mode: kind,
       lap: lapNo,
@@ -671,6 +703,7 @@ export class RaceController {
       mapDots,
       raceTime: race && s.phase === 'racing' ? s.time - s.goTime : null,
       pit,
+      brake,
     };
   }
 
@@ -701,6 +734,7 @@ export class RaceController {
     this.hud.dispose();
     this.trackScene.dispose();
     this.lineView.dispose();
+    this.brakeMarker.dispose();
     this.pitCrew.dispose();
     this.smoke.dispose();
     this.sparks.dispose();

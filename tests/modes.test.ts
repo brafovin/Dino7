@@ -3,9 +3,10 @@
 // Aufruf: npx tsx tests/modes.test.ts
 import { AIDriver } from '../src/shared/ai';
 import { emptyInput } from '../src/shared/carPhysics';
-import type { SessionConfig } from '../src/sim/config';
+import { getDifficulty, sanitizeAssists, type SessionConfig } from '../src/sim/config';
 import { RaceSession, type SessionEvent } from '../src/sim/RaceSession';
 import { LapTrace } from '../src/sim/LapTrace';
+import { brakeAdvice, BrakeHintTracker, type BrakeAdvice } from '../src/sim/brakeAdvice';
 
 let failures = 0;
 let passes = 0;
@@ -31,7 +32,7 @@ const base: SessionConfig = {
   wearScale: 1,
   startCompound: 'soft',
   transmission: 'auto',
-  assists: { tc: 'high', abs: true, line: 'full', steering: false, brake: false, autoReset: true, pitAssist: true },
+  assists: { tc: 'high', abs: true, line: 'full', steering: false, brake: false, autoReset: true, pitAssist: true, brakeHint: false },
   seed: 99,
 };
 const dt = 1 / 120;
@@ -213,6 +214,67 @@ console.log('\n▶ Box-Ruf & Boxengassen-Assistent (alle Strecken)');
   n.togglePitRequest();
   n.togglePitRequest();
   check(!n.player.pitRequest, 'Box-Ruf lässt sich wieder absagen');
+}
+
+// ------------------------------------------------------------------ Bremshinweis
+console.log('\n▶ Bremshinweis (Bremslinie)');
+{
+  // Statisch: Monza, Anfahrt auf die erste Schikane mit Höchsttempo
+  const m = new RaceSession({ ...base, trackId: 'monza', mode: 'timetrial' }, 'timetrial');
+  const chicane = m.track.corners.find((c) => c.name?.includes('Rettifilo'))!;
+  const sCh = chicane.start * m.track.spacing;
+  const far = brakeAdvice(m.track, m.playerProfile.v, m.track.wrapS(sCh - 450), 92);
+  const near = brakeAdvice(m.track, m.playerProfile.v, m.track.wrapS(sCh - 300), 92);
+  check(
+    !!far && !!near && far.strong && Math.abs(far.sBrake - near.sBrake) < 1 && near.dist < far.dist && m.track.deltaS(far.sBrake, sCh) > 60,
+    `Monza Schikane: Bremspunkt ${far ? Math.round(m.track.deltaS(far.sBrake, sCh)) : '?'} m vor dem Einlenken, Zieltempo ${far ? Math.round(far.vTarget * 3.6) : '?'} km/h`,
+  );
+  check(brakeAdvice(m.track, m.playerProfile.v, m.track.wrapS(sCh - 300), 20) === null, 'kein Hinweis, wenn man schon langsam genug ist');
+  check(
+    getDifficulty('normal').defaults.brakeHint && !sanitizeAssists({ ...getDifficulty('beginner').defaults }, 'expert').brakeHint,
+    'Bremshinweis: Standard an (Normal), bei Experte nicht erlaubt',
+  );
+
+  // Dynamisch: Bremspunkt-Hinweis gegen den tatsächlichen Bremspunkt eines sauber fahrenden Piloten
+  for (const trackId of ['monza', 'silverstone', 'spa', 'monaco']) {
+    const tt = new RaceSession({ ...base, trackId, mode: 'timetrial' }, 'timetrial');
+    const tracker = new BrakeHintTracker();
+    const pilot = new AIDriver(tt.player.car, tt.track, tt.line, { grip: 0.9, brake: 0.87, racecraft: 0, consistency: 1 }, 'dry', 3);
+    const errs: number[] = [];
+    let pending: BrakeAdvice | null = null;
+    let lastApex = -1;
+    let wasBraking = false;
+    let markerJumps = 0;
+    let prevLatched: number | null = null;
+    while (tt.time < 400 && tt.player.lap.completed < 2) {
+      const inp = pilot.update(dt, [{ car: tt.player.car, id: 0 }], 0, true);
+      tt.step(dt, inp);
+      tt.drainEvents();
+      const st = tt.player.car.st;
+      const bs = tracker.update(tt.track, tt.playerProfile.v, st.s, st.vx);
+      if (bs?.latched) {
+        if (prevLatched !== null && prevLatched !== bs.advice.sBrake && bs.advice.sApex === lastApex) markerJumps++;
+        prevLatched = bs.advice.sBrake;
+      } else prevLatched = null;
+      if (bs?.latched && bs.advice.strong && bs.dist > 0 && bs.advice.sApex !== lastApex) {
+        pending = bs.advice;
+        lastApex = bs.advice.sApex;
+      }
+      const braking = tt.player.input.brake > 0.4;
+      if (braking && !wasBraking && pending) {
+        errs.push(tt.track.deltaS(pending.sBrake, st.s));
+        pending = null;
+      }
+      wasBraking = braking;
+    }
+    const abs = errs.map(Math.abs).sort((a, b) => a - b);
+    const median = abs[Math.floor(abs.length / 2)] ?? Infinity;
+    check(
+      errs.length >= 4 && median < 25 && errs.every((e) => e > -3) && markerJumps === 0,
+      `${trackId}: ${errs.length} Bremspunkte, echtes Anbremsen ${median.toFixed(1)} m (Median) nach dem Hinweis ` +
+        `(Spanne ${Math.min(...errs).toFixed(1)}…${Math.max(...errs).toFixed(1)} m), Sprünge ${markerJumps}`,
+    );
+  }
 }
 
 // ------------------------------------------------------------------ Strafen & Reset

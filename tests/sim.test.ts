@@ -343,7 +343,7 @@ for (const id of raceTracks) {
     wearScale: 1,
     startCompound: 'medium',
     transmission: 'auto',
-    assists: { tc: 'high', abs: true, line: 'off', steering: false, brake: false, autoReset: true, pitAssist: true },
+    assists: { tc: 'high', abs: true, line: 'off', steering: false, brake: false, autoReset: true, pitAssist: true, brakeHint: false },
     seed: 1234,
   };
   const sess = new RaceSession(cfg, 'race');

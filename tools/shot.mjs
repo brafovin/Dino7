@@ -129,7 +129,7 @@ if (scenario.startsWith('pit')) {
       });
       app.applyQuality();
       app.startSession(
-        { mode: 'practice', trackId: track, laps: 3, weather: 'dry', difficulty: 'normal', playerDriverId: 'norris', aiCount: 0, startMode: 'pole', wearScale: 1, startCompound: 'soft', transmission: 'auto', assists: { tc: 'high', abs: true, line: 'off', steering: true, brake: false, autoReset: true, pitAssist: true }, seed: 1 },
+        { mode: 'practice', trackId: track, laps: 3, weather: 'dry', difficulty: 'normal', playerDriverId: 'norris', aiCount: 0, startMode: 'pole', wearScale: 1, startCompound: 'soft', transmission: 'auto', assists: { tc: 'high', abs: true, line: 'off', steering: true, brake: false, autoReset: true, pitAssist: true, brakeHint: false }, seed: 1 },
         'practice',
       );
     },
@@ -170,6 +170,64 @@ if (scenario.startsWith('pit')) {
     return { compound: s.player.car.st.compound, stops: s.player.pitStops, pilot: !!s.pitPilot, last: s.player.lastPitStop };
   });
   console.log('pit', JSON.stringify({ inLane, stopped, done, ...st }));
+}
+if (scenario.startsWith('brake')) {
+  // Bremshinweis: Auto mit Höchsttempo vor eine Bremszone setzen, Screenshots während der Anfahrt
+  const [, track = 'monza', cam = 'tv', line = 'corners'] = scenario.split(':');
+  await page.click('text=Verstanden').catch(() => undefined);
+  await page.evaluate(
+    ({ track, cam, line }) => {
+      const app = window.__app;
+      app.settings.update((s) => {
+        s.graphics.quality = 'medium';
+        s.camera.mode = cam;
+        s.assists.brakeHint = true;
+        s.assists.line = line;
+      });
+      app.applyQuality();
+      app.startSession(
+        { mode: 'practice', trackId: track, laps: 3, weather: 'dry', difficulty: 'normal', playerDriverId: 'leclerc', aiCount: 0, startMode: 'pole', wearScale: 1, startCompound: 'soft', transmission: 'auto', assists: { tc: 'high', abs: true, line, steering: true, brake: false, autoReset: true, pitAssist: true, brakeHint: true }, seed: 1 },
+        'practice',
+      );
+    },
+    { track, cam, line },
+  );
+  await page.waitForTimeout(Number(process.env.WAIT ?? 15000));
+  // erste starke Bremszone nach 30 % der Runde suchen und 330 m davor mit 300 km/h absetzen
+  const info = await page.evaluate(() => {
+    const sess = window.__app.session;
+    const tr = sess.track;
+    const v = sess.playerProfile.v;
+    const n = tr.n;
+    let iBest = -1;
+    for (let i = Math.floor(n * 0.3); i < n + Math.floor(n * 0.3); i++) {
+      const a = v[i % n];
+      const b = v[(i + 60) % n];
+      if (a > 75 && b < 40) {
+        iBest = i % n;
+        break;
+      }
+    }
+    const s0 = tr.wrapS(iBest * tr.spacing - 260);
+    sess.player.car.placeAt(tr, s0, tr.raceLine[tr.indexAt(s0)], 83);
+    sess.player.prevS = sess.player.car.st.s;
+    Object.assign(sess.player.prev, { x: sess.player.car.st.x, y: sess.player.car.st.y, z: sess.player.car.st.z, heading: sess.player.car.st.heading });
+    window.__keepFast = true;
+    return { s0, iBest };
+  });
+  console.log('brake', JSON.stringify(info));
+  // Gas halten, bis der Hinweis erscheint, dann Screenshots
+  await page.keyboard.down('KeyW');
+  for (let k = 0; k < Number(process.env.N ?? 4); k++) {
+    await page.waitForTimeout(Number(process.env.STEP ?? 900));
+    await shot(`brake-${track}-${line}-${k}`);
+    const st = await page.evaluate(() => {
+      const b = document.querySelector('.hud-brake');
+      return { hud: b && b.style.display !== 'none' ? b.textContent : null, v: Math.round(window.__app.session.player.car.st.vx * 3.6) };
+    });
+    console.log(k, JSON.stringify(st));
+  }
+  await page.keyboard.up('KeyW');
 }
 if (scenario === 'menus') {
   await page.click('text=Verstanden').catch(() => undefined);
