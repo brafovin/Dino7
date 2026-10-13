@@ -66,6 +66,24 @@ export class Minimap {
     g.lineWidth = 3.2 * this.dpr;
     path();
     g.stroke();
+    // Boxengasse
+    {
+      const pit = track.pit;
+      const span = track.deltaS(pit.sEntry, pit.sExit);
+      const pt = { x: 0, y: 0, z: 0, tx: 0, tz: 1 };
+      g.beginPath();
+      for (let x = 0; x <= span; x += 4) {
+        const s = pit.sEntry + x;
+        track.pointAt(s, track.pitPathD(s, null) * 2.2, pt);
+        const px = pt.x * this.scale + this.ox;
+        const pz = pt.z * this.scale + this.oz;
+        if (x === 0) g.moveTo(px, pz);
+        else g.lineTo(px, pz);
+      }
+      g.strokeStyle = 'rgba(120,170,255,0.75)';
+      g.lineWidth = 1.6 * this.dpr;
+      g.stroke();
+    }
     // Start/Ziel
     const sx = track.px[0] * this.scale + this.ox;
     const sz = track.pz[0] * this.scale + this.oz;

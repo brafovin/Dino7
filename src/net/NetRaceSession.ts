@@ -56,6 +56,7 @@ export class NetRaceSession implements ISession {
   private wallHit: WallHit = { impact: 0, x: 0, y: 0, z: 0 };
   private autopilot: AIDriver | null = null;
   private latestStandings: SnapshotMsg['standings'] = [];
+  pitPilot: AIDriver | null = null;
   playerNames = new Map<string, string>();
 
   constructor(cfg: SessionConfig, load: RaceLoadMsg, net: NetClient) {
@@ -113,6 +114,10 @@ export class NetRaceSession implements ISession {
         slipstream: 0,
         quali: null,
         playerName: g.name,
+        pitRequest: false,
+        pitDuration: 0,
+        lastPitStop: null,
+        pitServed: false,
       };
       this.cars.push(sc);
       this.idToCar.set(g.id, sc);
@@ -286,6 +291,7 @@ export class NetRaceSession implements ISession {
       st.compound = c.cmp;
       r.sc.input.throttle = c.th;
       r.sc.input.brake = c.br;
+      r.sc.pitTimer = c.pit ? 1 : 0;
       r.sc.prev.x = x;
       r.sc.prev.y = y;
       r.sc.prev.z = z;
@@ -330,8 +336,11 @@ export class NetRaceSession implements ISession {
     p0.z = st.z;
     p0.heading = st.heading;
     const racing = this.phase === 'racing' || this.phase === 'finished';
-    this.env.frozen = !racing;
-    if (this.autopilot) {
+    this.env.frozen = !racing || p.pitTimer > 0;
+    if (this.pitPilot && !this.autopilot) {
+      const others = this.cars.map((c) => ({ car: c.car, id: c.id }));
+      p.input = { ...this.pitPilot.update(dt, others, p.id, true) };
+    } else if (this.autopilot) {
       const others = this.cars.map((c) => ({ car: c.car, id: c.id }));
       p.input = { ...this.autopilot.update(dt, others, p.id, true) };
     } else {
@@ -372,6 +381,7 @@ export class NetRaceSession implements ISession {
     }
     p.prevS = st.s;
     p.progress = p.lap.progress(st.s);
+    if (racing) this.updatePit(dt);
     // Zustand senden
     this.sendTimer -= dt;
     if (this.sendTimer <= 0) {
@@ -397,8 +407,77 @@ export class NetRaceSession implements ISession {
       th: round(clamp(this.player.input.throttle, 0, 1), 2),
       br: round(clamp(this.player.input.brake, 0, 1), 2),
       cmp: st.compound,
-      pit: false,
+      pit: this.player.pitTimer > 0,
     });
+  }
+
+  inPitLane(c: SessionCar): boolean {
+    const st = c.car.st;
+    const tr = this.track;
+    const pit = tr.pit;
+    return tr.inRange(st.s, pit.sEntry, pit.sExit) && Math.sign(st.d) === pit.side && Math.abs(st.d) > tr.sampleField(tr.halfW, st.s) + 1;
+  }
+
+  boxOf(c: SessionCar): number {
+    const boxes = this.track.pit.boxes;
+    return boxes[c.teamIndex % boxes.length];
+  }
+
+  togglePitRequest(): void {
+    const c = this.player;
+    if (c.pitTimer > 0) return;
+    c.pitRequest = !c.pitRequest;
+    this.events.push({ type: 'message', text: c.pitRequest ? `Box, Box! Reifen: ${c.nextCompound.toUpperCase()}` : 'Boxenstopp abgesagt', tone: c.pitRequest ? 'warn' : 'info', carId: c.id });
+  }
+
+  /** Boxenstopp des eigenen Autos (Assistent, Stopp, Reifenwechsel). */
+  private updatePit(dt: number): void {
+    const c = this.player;
+    const st = c.car.st;
+    const tr = this.track;
+    const pit = tr.pit;
+    const box = this.boxOf(c);
+    const inLane = this.inPitLane(c);
+    if (!tr.inRange(st.s, pit.sEntry - 10, pit.sExit + 10)) c.pitServed = false;
+    if (c.pitTimer > 0) {
+      c.pitTimer -= dt;
+      if (c.pitTimer <= 0) {
+        c.pitTimer = 0;
+        st.tyreWear = [0, 0, 0, 0];
+        st.compound = c.nextCompound;
+        c.pitStops++;
+        c.pitServed = true;
+        c.pitRequest = false;
+        c.lastPitStop = c.pitDuration;
+        if (this.pitPilot) this.pitPilot.pitBox = null;
+        this.events.push({ type: 'pit', carId: c.id, stage: 'out', duration: c.pitDuration });
+        this.events.push({ type: 'message', text: `Standzeit ${c.pitDuration.toFixed(1)} s`, tone: 'good', carId: c.id });
+      }
+      return;
+    }
+    if (this.autopilot) return;
+    const toEntry = tr.deltaS(st.s, pit.sEntry);
+    if (inLane && !c.pitServed) c.pitRequest = true;
+    const approaching = c.pitRequest && !c.pitServed && toEntry > 0 && toEntry < 200;
+    if (this.cfg.assists.pitAssist && !this.pitPilot && (approaching || inLane)) {
+      this.pitPilot = new AIDriver(c.car, tr, this.line, { grip: 0.82, brake: 0.8, racecraft: 0, consistency: 1 }, this.load.weather, 77);
+      this.pitPilot.pitBox = c.pitServed ? null : box;
+      this.events.push({ type: 'message', text: 'Boxengassen-Assistent übernimmt', tone: 'info', carId: c.id });
+    }
+    if (this.pitPilot) {
+      const inPath = this.pitPilot.inPitPath || inLane;
+      // kleine Toleranz hinter der Einfahrt: der Pilot setzt seinen Boxenpfad erst im nächsten Schritt
+      const stillApproaching = c.pitRequest && !c.pitServed && toEntry > -40 && toEntry < 220;
+      if (!inPath && !stillApproaching) {
+        this.pitPilot = null;
+        this.events.push({ type: 'message', text: 'Boxengasse verlassen – du fährst', tone: 'good', carId: c.id });
+      }
+    }
+    if (inLane && !c.pitServed && c.pitRequest && Math.abs(tr.deltaS(st.s, box)) < 6 && st.speed < 1.5 && Math.abs(Math.abs(st.d) - pit.boxLane) < 3.5) {
+      c.pitDuration = 2.1 + Math.random() * 0.9;
+      c.pitTimer = c.pitDuration;
+      this.events.push({ type: 'pit', carId: c.id, stage: 'in', duration: c.pitDuration });
+    }
   }
 
   drainEvents(): SessionEvent[] {
@@ -438,6 +517,7 @@ export class NetRaceSession implements ISession {
     const s = tr.wrapS(c.car.st.s - 10);
     c.car.placeAt(tr, s, tr.raceLine[tr.indexAt(s)]);
     c.prevS = c.car.st.s;
+    this.pitPilot = null;
     this.events.push({ type: 'reset', carId: c.id });
   }
 

@@ -116,6 +116,61 @@ if (scenario.startsWith('tour')) {
   const info = await page.evaluate(() => ({ ...window.__app.renderer.info(), fps: window.__app.fpsText }));
   console.log('renderinfo', JSON.stringify(info));
 }
+if (scenario.startsWith('pit')) {
+  // Box-Ruf + Boxengassen-Assistent: Anfahrt, Boxengasse, Stopp mit Crew, Ausfahrt
+  const [, track = 'silverstone', cam = 'tv'] = scenario.split(':');
+  await page.click('text=Verstanden').catch(() => undefined);
+  await page.evaluate(
+    ({ track, cam }) => {
+      const app = window.__app;
+      app.settings.update((s) => {
+        s.graphics.quality = 'medium';
+        s.camera.mode = cam;
+      });
+      app.applyQuality();
+      app.startSession(
+        { mode: 'practice', trackId: track, laps: 3, weather: 'dry', difficulty: 'normal', playerDriverId: 'norris', aiCount: 0, startMode: 'pole', wearScale: 1, startCompound: 'soft', transmission: 'auto', assists: { tc: 'high', abs: true, line: 'off', steering: true, brake: false, autoReset: true, pitAssist: true }, seed: 1 },
+        'practice',
+      );
+    },
+    { track, cam },
+  );
+  await page.waitForTimeout(Number(process.env.WAIT ?? 15000));
+  await page.evaluate(() => {
+    const sess = window.__app.session;
+    const tr = sess.track;
+    const s = tr.wrapS(tr.pit.sEntry - 170);
+    sess.player.car.placeAt(tr, s, tr.raceLine[tr.indexAt(s)], 40);
+    sess.player.prevS = sess.player.car.st.s;
+    Object.assign(sess.player.prev, { x: sess.player.car.st.x, y: sess.player.car.st.y, z: sess.player.car.st.z, heading: sess.player.car.st.heading });
+    sess.player.nextCompound = 'hard';
+    sess.togglePitRequest();
+  });
+  await page.waitForTimeout(1500);
+  await shot(`pit-${track}-1-approach`);
+  const waitFor = async (fn, ms) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      if (await page.evaluate(fn)) return true;
+      await page.waitForTimeout(100);
+    }
+    return false;
+  };
+  const inLane = await waitFor(() => window.__app.session.inPitLane(window.__app.session.player), 180000);
+  await page.waitForTimeout(2500);
+  await shot(`pit-${track}-2-lane`);
+  const stopped = await waitFor(() => window.__app.session.player.pitTimer > 0, 240000);
+  await page.waitForTimeout(800);
+  await shot(`pit-${track}-3-stop`);
+  const done = await waitFor(() => window.__app.session.player.pitStops > 0, 120000);
+  await page.waitForTimeout(3000);
+  await shot(`pit-${track}-4-exit`);
+  const st = await page.evaluate(() => {
+    const s = window.__app.session;
+    return { compound: s.player.car.st.compound, stops: s.player.pitStops, pilot: !!s.pitPilot, last: s.player.lastPitStop };
+  });
+  console.log('pit', JSON.stringify({ inLane, stopped, done, ...st }));
+}
 if (scenario === 'menus') {
   await page.click('text=Verstanden').catch(() => undefined);
   await page.waitForTimeout(1500);

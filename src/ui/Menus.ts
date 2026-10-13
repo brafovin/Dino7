@@ -418,7 +418,7 @@ export class Menus {
     const d = getDifficulty(st.data.difficulty);
     const a = st.data.assists;
     const panel = h('div', { class: 'panel' }, h('h4', null, `Fahrhilfen (${d.name})`));
-    const yesNo = (key: 'abs' | 'steering' | 'brake' | 'autoReset', label: string, hint: string) =>
+    const yesNo = (key: 'abs' | 'steering' | 'brake' | 'autoReset' | 'pitAssist', label: string, hint: string) =>
       h(
         'div',
         { class: 'field' },
@@ -458,6 +458,7 @@ export class Menus {
       yesNo('steering', 'Lenkhilfe', 'Begrenzt den Lenkwinkel auf den Haftgrenzbereich und lenkt bei Übersteuern gegen.'),
       yesNo('brake', 'Bremsassistent', 'Bremst automatisch vor Kurven, wenn du zu schnell bist.'),
       yesNo('autoReset', 'Automatische Rücksetzung', 'Setzt dich zurück, wenn du neben der Strecke stecken bleibst.'),
+      yesNo('pitAssist', 'Boxengassen-Assistent', 'Nach dem Box-Ruf (Taste P) fährt das Auto selbstständig durch die Boxengasse zur Box und wieder hinaus.'),
     );
     return panel;
   }
@@ -735,6 +736,7 @@ export class Menus {
               ['Kamera wechseln', k('camera')],
               ['Zurücksetzen', k('reset')],
               ['Rückblick', k('lookBack')],
+              ['Box-Ruf (Boxenstopp)', k('pit')],
               ['Pause', k('pause')],
             ] as [string, string][]
           ).map(([l, v]) => h('div', null, h('span', null, l), h('b', null, v))),
@@ -752,6 +754,7 @@ export class Menus {
               ['Rückblick', 'B'],
               ['Zurücksetzen', 'X'],
               ['Kamera', 'Y'],
+              ['Box-Ruf', 'Steuerkreuz ↓'],
               ['Pause', 'Start'],
             ] as [string, string][]
           ).map(([l, v]) => h('div', null, h('span', null, l), h('b', null, v))),
@@ -792,7 +795,7 @@ export class Menus {
 
   // ------------------------------------------------------------------ Pause
 
-  pause(opts: { multiplayer: boolean; onResume: () => void; onRestart: () => void; onQuit: () => void; onCompound: (c: Compound) => void; current: Compound; next: Compound }): void {
+  pause(opts: { multiplayer: boolean; onResume: () => void; onRestart: () => void; onQuit: () => void; onCompound: (c: Compound) => void; current: Compound; next: Compound; pitRequested: boolean; onPitRequest: () => void }): void {
     const app = this.app;
     const s = this.screen('screen dark');
     const item = (label: string, fn: () => void) => h('button', { class: 'menu-item', onclick: () => (app.click(), fn()) }, label);
@@ -815,7 +818,19 @@ export class Menus {
           'div',
           { class: 'panel' },
           h('h4', null, 'Boxenstrategie'),
-          h('p', { style: 'color:var(--muted);font-size:13px;margin:0 0 10px' }, `Aktuelle Reifen: ${COMPOUNDS[opts.current].name}. Fahre in die Boxengasse (Tempolimit 80 km/h) und halte in der markierten Box deines Teams.`),
+          h('p', { style: 'color:var(--muted);font-size:13px;margin:0 0 10px' }, `Aktuelle Reifen: ${COMPOUNDS[opts.current].name}. Box-Ruf mit Taste P – oder selbst in die Boxengasse fahren (Tempolimit 80 km/h) und in der markierten Box deines Teams halten.`),
+          h(
+            'button',
+            {
+              class: `btn ${opts.pitRequested ? '' : 'primary'}`,
+              style: 'margin-bottom:12px',
+              onclick: () => {
+                opts.onPitRequest();
+                this.pause({ ...opts, pitRequested: !opts.pitRequested });
+              },
+            },
+            opts.pitRequested ? 'Boxenstopp absagen' : 'Boxenstopp anfordern (Box-Ruf)',
+          ),
           h(
             'div',
             { class: 'field' },

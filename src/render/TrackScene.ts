@@ -253,6 +253,7 @@ export class TrackScene {
     this.buildCurbsAndRunoff();
     this.buildWalls();
     this.buildPit();
+    this.buildPitDecor();
     this.buildStartGantry();
     this.buildGrandstands();
     this.buildTerrain();
@@ -549,6 +550,99 @@ export class TrackScene {
       this.disposables.push(g);
       this.exclusions.push({ x: pt.x, z: pt.z, r: 30 });
     });
+  }
+
+  /** Schilder, Reifenstapel und Bodenbeschriftung in der Boxengasse. */
+  private buildPitDecor(): void {
+    const tr = this.track;
+    const pit = tr.pit;
+    const side = pit.side;
+    const face = (s: number) => {
+      tr.pointAt(s, 0, pt);
+      return Math.atan2(pt.tx, pt.tz) + Math.PI;
+    };
+    const sign = (s: number, d: number, text: string, fg: string, bg: string, w: number, h: number, y: number) => {
+      const tex = textDecal(text, fg, bg, 512, Math.round((512 * h) / w));
+      tr.pointAt(s, d, pt);
+      const g = new THREE.PlaneGeometry(w, h);
+      const m = new THREE.Mesh(g, this.mat({ map: tex, roughness: 0.5, side: THREE.DoubleSide, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: this.env.floodlights ? 0.6 : 0.15 }));
+      m.position.set(pt.x, pt.y + y, pt.z);
+      m.rotation.y = face(s);
+      this.group.add(m);
+      this.disposables.push(g);
+      const post = new THREE.BoxGeometry(0.12, y - h / 2, 0.12);
+      post.translate(pt.x, pt.y + (y - h / 2) / 2, pt.z);
+      this.add(post, this.mat({ color: 0x55595f, roughness: 0.6 }), { receive: false });
+    };
+    const barAt = (s: number) => (side > 0 ? tr.barrierAt(s, true) : tr.barrierAt(s, false));
+    // Einfahrt
+    const sEntrySign = tr.wrapS(pit.sEntry - 70);
+    sign(sEntrySign, side * (barAt(sEntrySign) + 1.2), side > 0 ? '◀ PIT' : 'PIT ▶', '#ffffff', '#1d4ed8', 2.6, 1.3, 3.2);
+    // Tempolimit an den Limitlinien
+    sign(tr.wrapS(pit.sWallStart - 40), side * (pit.outerD - 0.6), '80', '#111111', '#ffffff', 1.0, 1.0, 2.4);
+    sign(tr.wrapS(pit.sWallEnd + 20), side * (pit.outerD - 0.6), 'ENDE 80', '#111111', '#ffffff', 1.4, 0.8, 2.4);
+    // Ausfahrt
+    const sExitSign = tr.wrapS(pit.sWallEnd + 35);
+    sign(sExitSign, side * (barAt(sExitSign) + 1.0), 'PIT EXIT', '#ffffff', '#15803d', 2.6, 1.0, 3.2);
+    // „PIT“ auf dem Asphalt der Einfahrt
+    {
+      const tex = textDecal('PIT', '#f2f2f2', null, 256, 96);
+      const s0 = tr.wrapS(pit.sEntry + Math.min(60, tr.deltaS(pit.sEntry, pit.sWallStart) * 0.6));
+      tr.pointAt(s0, tr.pitPathD(s0, null), pt);
+      const g = new THREE.PlaneGeometry(4.2, 1.6);
+      g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, this.mat({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.7 }));
+      m.position.set(pt.x, pt.y + 0.02, pt.z);
+      m.rotation.y = Math.atan2(pt.tx, pt.tz) + Math.PI / 2;
+      this.group.add(m);
+      this.disposables.push(g);
+    }
+    // Teamnamen am Boden vor den Boxen + Reifenstapel
+    const tyreGeos: THREE.BufferGeometry[] = [];
+    const cmpColors = ['#ff3030', '#ffd400', '#f2f2f2'];
+    pit.boxes.forEach((b, t) => {
+      const team = TEAMS[t % TEAMS.length];
+      const tex = textDecal(team.short, '#ffffff', null, 256, 96);
+      tr.pointAt(b + 4.6, side * pit.boxLane, pt);
+      const g = new THREE.PlaneGeometry(3.0, 1.1);
+      g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, this.mat({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.7 }));
+      m.position.set(pt.x, pt.y + 0.02, pt.z);
+      m.rotation.y = Math.atan2(pt.tx, pt.tz) + Math.PI;
+      this.group.add(m);
+      this.disposables.push(g);
+      // zwei Reifenstapel neben der Garage
+      for (const [ds, c] of [
+        [-6.2, 0],
+        [6.2, 1 + (t % 2)],
+      ] as [number, number][]) {
+        tr.pointAt(b + ds, side * (pit.outerD - 1.0), pt);
+        for (let k = 0; k < 4; k++) {
+          const tyre = new THREE.CylinderGeometry(0.36, 0.36, 0.34, 14);
+          tyre.translate(pt.x, pt.y + 0.17 + k * 0.35, pt.z);
+          const band = new THREE.CylinderGeometry(0.365, 0.365, 0.05, 14);
+          band.translate(pt.x, pt.y + 0.3 + k * 0.35, pt.z);
+          const tc = new THREE.Color('#151515');
+          const bc = new THREE.Color(cmpColors[c]);
+          for (const [geo, col] of [
+            [tyre, tc],
+            [band, bc],
+          ] as [THREE.BufferGeometry, THREE.Color][]) {
+            const gg = geo.toNonIndexed();
+            gg.deleteAttribute('uv');
+            const arr = new Float32Array(gg.getAttribute('position').count * 3);
+            for (let i = 0; i < arr.length; i += 3) {
+              arr[i] = col.r;
+              arr[i + 1] = col.g;
+              arr[i + 2] = col.b;
+            }
+            gg.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+            tyreGeos.push(gg);
+          }
+        }
+      }
+    });
+    if (tyreGeos.length) this.add(mergeGeometries(tyreGeos)!, this.mat({ vertexColors: true, roughness: 0.85 }), { cast: true, name: 'tyrestacks' });
   }
 
   private buildStartGantry(): void {

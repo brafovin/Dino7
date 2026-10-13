@@ -68,6 +68,7 @@ Kein kostenpflichtiger Dienst, keine Cloud – alles läuft lokal.
 | Kamera wechseln                | C                     | Y                         |
 | Fahrzeug zurücksetzen          | R                     | X                         |
 | Rückblick                      | B                     | B                         |
+| Box-Ruf (Boxenstopp anfordern) | P                     | Steuerkreuz ↓             |
 | Pause                          | Esc                   | Start                     |
 
 * Alle Tasten sind unter **Einstellungen → Steuerung** frei belegbar (zwei Tasten je Aktion).
@@ -76,6 +77,8 @@ Kein kostenpflichtiger Dienst, keine Cloud – alles läuft lokal.
   (ohne ABS). Das kann zum Eindrehen in Haarnadeln genutzt werden.
 * Rückwärts: Im Stand die Bremse gedrückt halten (Automatik) bzw. im 1. Gang herunterschalten (Manuell).
 * Gamepads werden über die Gamepad-API erkannt; Vibration wird genutzt, wenn das Gerät sie unterstützt.
+* Box-Ruf: erneut drücken sagt den Stopp wieder ab; alternativ im Pausemenü
+  („Boxenstopp anfordern“ inkl. Wahl der Reifenmischung).
 
 ---
 
@@ -92,6 +95,28 @@ Positionsberechnung, Abständen (Zeitmessung über Streckenmarker), schnellsten 
 Boxenstopps, Strafen → Zielflagge → Ergebnis mit Platzierung, Zeit/Abstand, bester Runde,
 Stopps und Strafen. Nach deiner Zieldurchfahrt übernimmt ein Autopilot die Auslaufrunde, das Ergebnis
 aktualisiert sich live; „Rennen beenden“ wertet nicht angekommene Fahrzeuge hochgerechnet (markiert mit `*`).
+
+### Boxenstopps und Boxengasse
+Jede Strecke hat eine Boxengasse mit Ein- und Ausfahrt, Boxenmauer, 80-km/h-Tempolimit
+(Schilder „80“/„ENDE 80“, HUD-Anzeige „PIT 80“), elf Boxenplätzen in Teamfarben
+mit Teamnamen, Reifenstapeln und einer Ampel an der Ausfahrt. In jeder Box steht eine animierte
+**Boxencrew** (11 Mechaniker), die nur antritt, wenn ihr Auto kommt, und sich beim Reifenwechsel
+an die Räder kniet; das Auto wird dabei angehoben.
+
+* **Box-Ruf** (Taste **P** / Steuerkreuz ↓ / Pausemenü): Das HUD zeigt „Box, Box!“ mit der
+  Entfernung zur Einfahrt und der Seite (links/rechts rein).
+* **Boxengassen-Assistent** (Fahrhilfe, standardmäßig an, bei „Experte“ standardmäßig aus): ca. 200 m vor der
+  Einfahrt übernimmt der Assistent, fährt mit Tempolimit zur eigenen Teambox, hält an und bringt
+  das Auto nach dem Stopp bis zurück auf die Strecke – danach fährst du wieder selbst.
+* Ohne Assistent fährst du selbst: auf der Boxenseite in die Gasse, vor der Limit-Linie auf
+  80 km/h bremsen (ab der Linie hält der Begrenzer das Tempo, bremst aber nicht für dich – wer im
+  Rennen mit über 83 km/h über die Linie fährt, bekommt +5 s), in der eigenen, farbig markierten
+  Box anhalten.
+* Stopp: 2,1–3,0 s Standzeit (HUD mit Fortschrittsbalken), neue Reifen der gewählten Mischung,
+  Verschleiß zurückgesetzt. Pro Durchfahrt höchstens ein Stopp; die Durchfahrt ohne Box-Ruf
+  kostet nur Zeit.
+* KI-Fahrer kommen bei starkem Reifenverschleiß selbstständig an die Box (eigene Strategie für
+  die Reifenwahl), fahren über den Boxenpfad und reihen sich danach wieder ein.
 
 ### Zeitfahren
 Allein auf der Strecke, Zeitnahme ab der Ziellinie, Sektorzeiten (lila = Bestwert, grün =
@@ -211,7 +236,7 @@ verweigert zu frühes Runterschalten, aggressives Runterschalten erzeugt starke 
 
 **Fahrhilfen:** Traktionskontrolle (Aus/Niedrig/Hoch), ABS (Aus/Ein), Ideallinie
 (Aus/Nur Kurven/Vollständig – grün = Gas, gelb = lupfen, rot = bremsen), Lenkhilfe (Ein/Aus),
-Bremsassistent (Ein/Aus), automatische Rücksetzung (Ein/Aus).
+Bremsassistent (Ein/Aus), automatische Rücksetzung (Ein/Aus), Boxengassen-Assistent (Ein/Aus).
 
 **Weitere:** Grafikqualität (Niedrig/Mittel/Hoch), FPS-Anzeige, Lenkempfindlichkeit,
 Gamepad-Lenkkurve und -Totzone, Vibration, Lautstärken (Gesamt, Motor, Umgebung, Effekte),
@@ -306,8 +331,10 @@ Verlassen aufgeräumt, globale Fehlerbehandlung mit verständlichen Meldungen.
 * Streckenlayouts sind angenäherte Nachbauten (siehe oben), keine exakten Vermessungen.
 * Fahrzeugmodelle und Lackierungen sind eigenständige, stilisierte Designs.
 * Kein Schadensmodell, keine Reifentemperatur, kein Federungsmodell; das Auto kann nicht abheben.
-* Boxenstopps: Reifenwechsel (Mischung im Pausemenü wählbar), kein Nachtanken, keine
-  Boxenmannschaft-Animation.
+* Boxenstopps: nur Reifenwechsel (kein Nachtanken, keine Reparaturen, kein „Unsafe Release“);
+  die Boxencrew ist eine einfache, stilisierte Animation (Figuren gehen in Position, knien beim
+  Reifenwechsel) ohne einzelne Handgriffe. Im Multiplayer ist der Boxenstopp clientseitig; der
+  Server sieht nur den Status „in der Box“.
 * KI überholt vorsichtig; in engen Passagen (Monaco) kommt es selten zu Überholmanövern.
 * Multiplayer: Kollisionen zwischen Mitspielern werden von jedem Client für das eigene Auto
   aufgelöst (keine serverseitige Kollisionsphysik); bei hohem Ping können kurze Überlappungen

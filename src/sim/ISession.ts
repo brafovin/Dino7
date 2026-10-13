@@ -30,4 +30,10 @@ export interface ISession {
   resetCar(c: SessionCar, back?: number): void;
   forceFinish(): void;
   qualiResults: ResultRow[] | null;
+  /** Box-Ruf umschalten */
+  togglePitRequest(): void;
+  inPitLane(c: SessionCar): boolean;
+  boxOf(c: SessionCar): number;
+  /** Spieler wird vom Boxengassen-Assistenten gesteuert */
+  readonly pitPilot: unknown;
 }

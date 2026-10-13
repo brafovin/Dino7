@@ -2,7 +2,7 @@
 // Strafen, Boxenstopps, Zieleinlauf und Ergebnis. Wird vom Spiel und von Headless-Tests genutzt.
 
 import { AIDriver, makeAISkill, type OtherCar } from '../shared/ai';
-import { Car, type CarInput, type Compound, emptyInput, makeCarParams, type StepEnv } from '../shared/carPhysics';
+import { Car, type CarInput, COMPOUNDS, type Compound, emptyInput, makeCarParams, type StepEnv } from '../shared/carPhysics';
 import { collideCars, collideWalls, type WallHit } from '../shared/collisions';
 import { LapTracker, type LapEvent } from '../shared/lapTracker';
 import { clamp, mulberry32 } from '../shared/math';
@@ -52,6 +52,13 @@ export interface SessionCar {
   nextCompound: Compound;
   slipstream: number;
   quali: number | null;
+  /** Boxenstopp angefordert (Box-Ruf) */
+  pitRequest: boolean;
+  /** Dauer des laufenden/letzten Stopps (Standzeit) */
+  pitDuration: number;
+  lastPitStop: number | null;
+  /** Bei diesem Durchfahren der Boxengasse bereits bedient */
+  pitServed: boolean;
   /** Zielzeit geschätzt (Rennen vorzeitig beendet) */
   estimated?: boolean;
   /** Mehrspieler: Name des Spielers */
@@ -66,7 +73,7 @@ export type SessionEvent =
   | { type: 'lights'; count: number }
   | { type: 'go' }
   | { type: 'finish'; carId: number; position: number }
-  | { type: 'pit'; carId: number; stage: 'in' | 'out' }
+  | { type: 'pit'; carId: number; stage: 'in' | 'out'; duration?: number }
   | { type: 'reset'; carId: number };
 
 export interface ResultRow {
@@ -124,6 +131,8 @@ export class RaceSession implements ISession {
   readonly openEnded: boolean;
   /** Spieler wird nach Zieleinlauf von der KI gesteuert */
   private playerAutopilot: AIDriver | null = null;
+  /** Boxengassen-Assistent: steuert den Spieler durch die Boxengasse */
+  pitPilot: AIDriver | null = null;
   /** Qualifying: KI-Runden werden im Hintergrund in Zeitscheiben simuliert */
   private qualiQueue: Driver[] = [];
   private qualiRun: { driver: Driver; car: Car; ai: AIDriver; lt: LapTracker; prev: number; t: number } | null = null;
@@ -217,6 +226,10 @@ export class RaceSession implements ISession {
         nextCompound: cfg.weather === 'wet' ? 'inter' : 'hard',
         slipstream: 0,
         quali: null,
+        pitRequest: false,
+        pitDuration: 0,
+        lastPitStop: null,
+        pitServed: false,
       };
       this.cars.push(sc);
     });
@@ -340,6 +353,7 @@ export class RaceSession implements ISession {
     c.wrongWayTimer = 0;
     c.cut.active = false;
     if (c.ai) c.ai.onReset();
+    if (c.isPlayer && this.pitPilot) this.pitPilot = null;
     if (this.openEnded || this.kind === 'qualifying') c.lap.invalid = true;
     this.savePrev(c);
     this.emit({ type: 'reset', carId: c.id });
@@ -375,7 +389,9 @@ export class RaceSession implements ISession {
     const others: OtherCar[] = this.cars.map((c) => ({ car: c.car, id: c.id, ghost: c.ghostTimer > 0 || c.pitTimer > 0 }));
     for (const c of this.cars) {
       this.savePrev(c);
-      if (c.isPlayer && !this.playerAutopilot) {
+      if (c.isPlayer && this.pitPilot && !this.playerAutopilot) {
+        c.input = this.pitPilot.update(dt, others, c.id, raceOn);
+      } else if (c.isPlayer && !this.playerAutopilot) {
         c.input = this.applyPlayerAssists(c, playerInput);
       } else {
         const ai = c.isPlayer ? this.playerAutopilot! : c.ai!;
@@ -620,10 +636,43 @@ export class RaceSession implements ISession {
     }
   }
 
+  /** Fahrzeug befindet sich in der Boxengasse (neben der Strecke auf der Boxenseite). */
+  inPitLane(c: SessionCar): boolean {
+    const st = c.car.st;
+    const tr = this.track;
+    const pit = tr.pit;
+    return tr.inRange(st.s, pit.sEntry, pit.sExit) && Math.sign(st.d) === pit.side && Math.abs(st.d) > tr.sampleField(tr.halfW, st.s) + 1;
+  }
+
+  /** Box-Ruf des Spielers umschalten. */
+  togglePitRequest(c: SessionCar = this.player): void {
+    if (c.pitTimer > 0) return;
+    c.pitRequest = !c.pitRequest;
+    if (c.isPlayer) {
+      this.emit({
+        type: 'message',
+        text: c.pitRequest ? `Box, Box! Reifen: ${c.nextCompound.toUpperCase()}` : 'Boxenstopp abgesagt',
+        tone: c.pitRequest ? 'warn' : 'info',
+        carId: c.id,
+      });
+    }
+  }
+
+  /** Box des Teams (s-Position). */
+  boxOf(c: SessionCar): number {
+    const boxes = this.track.pit.boxes;
+    return boxes[c.teamIndex % boxes.length];
+  }
+
   private updatePit(c: SessionCar, dt: number): void {
     const st = c.car.st;
     const tr = this.track;
     const pit = tr.pit;
+    const box = this.boxOf(c);
+    const inLane = this.inPitLane(c);
+    if (!tr.inRange(st.s, pit.sEntry - 10, pit.sExit + 10)) c.pitServed = false;
+
+    // Laufender Stopp
     if (c.pitTimer > 0) {
       c.pitTimer -= dt;
       if (c.pitTimer <= 0) {
@@ -631,31 +680,58 @@ export class RaceSession implements ISession {
         st.tyreWear = [0, 0, 0, 0];
         st.compound = c.nextCompound;
         c.pitStops++;
+        c.pitServed = true;
+        c.pitRequest = false;
+        c.lastPitStop = c.pitDuration;
         if (c.ai) c.ai.pitBox = null;
-        this.emit({ type: 'pit', carId: c.id, stage: 'out' });
-        if (c.isPlayer) this.emit({ type: 'message', text: `Boxenstopp beendet – ${st.compound.toUpperCase()}`, tone: 'good', carId: c.id });
+        if (c.isPlayer && this.pitPilot) this.pitPilot.pitBox = null;
+        this.emit({ type: 'pit', carId: c.id, stage: 'out', duration: c.pitDuration });
+        if (c.isPlayer) this.emit({ type: 'message', text: `Standzeit ${c.pitDuration.toFixed(1)} s – ${COMPOUNDS[st.compound].name}`, tone: 'good', carId: c.id });
       }
       return;
     }
+
     // KI-Strategie
-    if (c.ai && this.kind === 'race' && c.ai.pitBox === null && this.cfg.wearScale > 0 && !c.finished) {
+    if (c.ai && this.kind === 'race' && c.ai.pitBox === null && this.cfg.wearScale > 0 && !c.finished && !c.pitServed) {
       const maxWear = Math.max(...st.tyreWear);
       const lapsLeft = this.totalLaps - c.lap.completed;
       if (maxWear > 0.6 && lapsLeft >= 2) {
-        c.ai.pitBox = pit.boxes[c.teamIndex % pit.boxes.length];
+        c.ai.pitBox = box;
+        c.pitRequest = true;
         c.nextCompound = this.cfg.weather === 'wet' ? 'inter' : lapsLeft > 12 ? 'hard' : 'medium';
       }
     }
-    // Stopp in der eigenen Box
-    const box = pit.boxes[c.teamIndex % pit.boxes.length];
-    const inLane = Math.sign(st.d) === pit.side && Math.abs(st.d) > pit.wallD;
-    if (inLane && Math.abs(tr.deltaS(st.s, box)) < 6 && st.speed < 1.5 && Math.abs(Math.abs(st.d) - pit.boxLane) < 3.5) {
-      c.pitTimer = 2.6 + this.rng() * 0.6;
-      this.emit({ type: 'pit', carId: c.id, stage: 'in' });
+
+    // Spieler: Boxengassen-Assistent übernimmt vor der Einfahrt bzw. in der Boxengasse
+    if (c.isPlayer && !this.playerAutopilot) {
+      const toEntry = tr.deltaS(st.s, pit.sEntry);
+      const approaching = c.pitRequest && !c.pitServed && toEntry > 0 && toEntry < 200;
+      if (inLane && !c.pitServed) c.pitRequest = true;
+      if (this.cfg.assists.pitAssist && !this.pitPilot && (approaching || inLane)) {
+        this.pitPilot = new AIDriver(c.car, tr, this.line, { grip: 0.82, brake: 0.8, racecraft: 0, consistency: 1 }, this.cfg.weather, 77);
+        this.pitPilot.pitBox = c.pitServed ? null : box;
+        this.emit({ type: 'message', text: 'Boxengassen-Assistent übernimmt', tone: 'info', carId: c.id });
+      }
+      if (this.pitPilot) {
+        const inPath = this.pitPilot.inPitPath || inLane;
+        // kleine Toleranz hinter der Einfahrt: der Pilot setzt seinen Boxenpfad erst im nächsten Schritt
+        const stillApproaching = c.pitRequest && !c.pitServed && toEntry > -40 && toEntry < 220;
+        if (!inPath && !stillApproaching && !c.pitTimer) {
+          this.pitPilot = null;
+          this.emit({ type: 'message', text: 'Boxengasse verlassen – du fährst', tone: 'good', carId: c.id });
+        }
+      }
+    }
+
+    // Stopp in der eigenen Box (nur einmal pro Durchfahrt, nur mit Box-Ruf)
+    if (inLane && !c.pitServed && (c.pitRequest || (c.ai && c.ai.pitBox !== null)) && Math.abs(tr.deltaS(st.s, box)) < 6 && st.speed < 1.5 && Math.abs(Math.abs(st.d) - pit.boxLane) < 3.5) {
+      c.pitDuration = 2.1 + this.rng() * 0.9;
+      c.pitTimer = c.pitDuration;
+      this.emit({ type: 'pit', carId: c.id, stage: 'in', duration: c.pitDuration });
       if (c.isPlayer) this.emit({ type: 'message', text: 'Boxenstopp – Reifenwechsel', tone: 'info', carId: c.id });
     }
-    // Zu schnell in der Boxengasse
-    if (c.isPlayer && inLane && Math.abs(tr.deltaS(st.s, pit.sWallStart)) < 2 && st.vx > pit.speedLimit + 3 && this.kind === 'race') {
+    // Zu schnell in der Boxengasse (beim Passieren der Tempolimit-Linie)
+    if (c.isPlayer && inLane && Math.abs(tr.deltaS(st.s, pit.sWallStart - 40)) < 2.5 && st.vx > pit.speedLimit + 3 && this.kind === 'race' && !this.pitPilot) {
       c.penalty += 5;
       this.emit({ type: 'message', text: 'Zu schnell in der Boxengasse: +5 s', tone: 'bad', carId: c.id });
     }

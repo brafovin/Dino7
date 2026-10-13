@@ -174,14 +174,17 @@ export class AIDriver {
     // ------------------------------------------------ Boxengasse
     let pitMode = false;
     const pit = tr.pit;
+    const toEntryNow = tr.deltaS(s, pit.sEntry);
+    const inPitRange = tr.inRange(s, pit.sEntry, pit.sExit);
     if (this.pitBox !== null) {
-      const toEntry = tr.deltaS(s, pit.sEntry);
-      if ((toEntry > 0 && toEntry < 260) || this.inPitPath) pitMode = true;
-      if (tr.inRange(s, pit.sEntry, pit.sExit) && this.inPitPath === false && toEntry <= 0 && toEntry > -40) this.inPitPath = true;
+      if (toEntryNow > 0 && toEntryNow < 260) pitMode = true;
+      if (inPitRange && !this.inPitPath && toEntryNow <= 0 && toEntryNow > -40) this.inPitPath = true;
     }
-    if (this.inPitPath && !tr.inRange(s, pit.sEntry - 5, pit.sExit)) {
-      this.inPitPath = false;
-    }
+    // Bereits in der Boxengasse (z. B. nach dem Stopp oder Übernahme durch den Assistenten):
+    // dem Boxengassen-Pfad bis zur Ausfahrt folgen
+    if (!this.inPitPath && inPitRange && Math.sign(st.d) === pit.side && Math.abs(st.d) > pit.wallD - 0.5) this.inPitPath = true;
+    if (this.inPitPath && !tr.inRange(s, pit.sEntry - 5, pit.sExit)) this.inPitPath = false;
+    if (this.inPitPath) pitMode = true;
 
     // ------------------------------------------------ Lenkung (Pure Pursuit)
     const Ld = clamp(7 + v * 0.36, 9, 40);

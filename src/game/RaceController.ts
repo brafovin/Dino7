@@ -5,11 +5,12 @@ import type { DriveInput, Input } from '../input/Input';
 import { CameraRig } from '../render/CameraRig';
 import { buildCar, type CarMeshParts, setCarCompound } from '../render/CarModel';
 import { Particles, Rain, SkidMarks } from '../render/Effects';
+import { PitCrew, type PitCarInfo } from '../render/PitCrew';
 import { RacingLineView } from '../render/RacingLineView';
 import type { Renderer } from '../render/Renderer';
 import { TrackScene } from '../render/TrackScene';
 import { type BestLapRecord, loadBestLaps, saveBestLap, type Settings } from '../settings';
-import { type CarInput, emptyInput, SURFACE_INFO } from '../shared/carPhysics';
+import { type CarInput, COMPOUNDS, emptyInput, SURFACE_INFO } from '../shared/carPhysics';
 import { clamp, formatTime, wrapAngle } from '../shared/math';
 import { SURF_ASPHALT, SURF_CURB, SURF_GRASS, SURF_GRAVEL } from '../shared/track';
 import type { ISession } from '../sim/ISession';
@@ -49,6 +50,9 @@ export class RaceController {
   private readonly skids = new SkidMarks(this.lowQ() ? 1200 : 3000);
   private rain: Rain | null = null;
   private lineView: RacingLineView;
+  private readonly pitCrew: PitCrew;
+  private readonly pitInfos: PitCarInfo[] = [];
+  private lastPitDoneAt = -100;
   private acc = 0;
   paused = false;
   private readonly drive: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: 0, lookBack: false };
@@ -102,6 +106,8 @@ export class RaceController {
     }
     this.lineView = new RacingLineView(session.track, session.line);
     this.scene.add(this.lineView.mesh);
+    this.pitCrew = new PitCrew(session.track);
+    this.scene.add(this.pitCrew.group);
     this.scene.add(this.smoke.points, this.sparks.points, this.skids.mesh);
     if (session.cfg.weather === 'wet') {
       this.rain = new Rain(q === 'low' ? 1200 : q === 'medium' ? 2200 : 3500);
@@ -187,6 +193,7 @@ export class RaceController {
       this.settings.camera.mode = m;
       this.hud.message(cameraName(m), 'info', 1200);
     }
+    if (inp.consume('pit') && !this.paused && (s.kind !== 'race' || s.phase === 'racing') && !s.player.finished) s.togglePitRequest();
     if (inp.consume('shiftUp')) this.pendingShiftUp = true;
     if (inp.consume('shiftDown')) this.pendingShiftDown = true;
     this.resetCooldown = Math.max(0, this.resetCooldown - dt);
@@ -242,6 +249,13 @@ export class RaceController {
       const vel = new THREE.Vector3(Math.sin(pst.heading) * pst.vx, 0, Math.cos(pst.heading) * pst.vx);
       this.rain.update(this.paused ? 0 : dt, camPos, vel);
     }
+    // Boxencrews und Ausfahrtsampel
+    this.pitInfos.length = 0;
+    for (const c of s.cars) {
+      const incoming = !c.pitServed && (c.pitRequest || (c.ai !== null && c.ai.pitBox !== null)) && s.inPitLane(c);
+      if (incoming || c.pitTimer > 0) this.pitInfos.push({ teamIndex: c.teamIndex, incoming, stopped: c.pitTimer > 0 });
+    }
+    this.pitCrew.update(this.paused ? 0 : dt, this.pitInfos, s.phase === 'racing' || s.phase === 'finished');
     // Ideallinie
     this.lineView.update(this.settings.assists.line, pst.s, pst.vx, s.playerProfile.v);
     // Startampel
@@ -347,7 +361,11 @@ export class RaceController {
           break;
         }
         case 'pit':
-          if (e.carId === me && e.stage === 'out') this.input.rumble(0.3, 0.3, 200);
+          if (e.carId === me && e.stage === 'out') {
+            this.input.rumble(0.3, 0.3, 200);
+            this.lastPitDoneAt = s.time;
+          }
+          if (e.carId === me && e.stage === 'in') this.audio.beep(520, 0.15, 0.1);
           break;
         case 'finish':
           break;
@@ -416,7 +434,8 @@ export class RaceController {
       const z = p.z + (st.z - p.z) * a;
       const hdg = p.heading + wrapAngle(st.heading - p.heading) * a;
       const vib = st.curb > 0 ? (Math.random() - 0.5) * 0.02 * Math.min(1, st.speed / 30) : 0;
-      root.position.set(x, y + vib, z);
+      // Im Boxenstopp aufgebockt
+      root.position.set(x, y + vib + (v.sc.pitTimer > 0 ? 0.07 : 0), z);
       root.rotation.set(-st.pitch, hdg, st.roll, 'YXZ');
       v.parts.body.rotation.set(-st.bodyPitch, 0, st.bodyRoll);
       v.parts.wheels.forEach((w, i) => {
@@ -597,6 +616,20 @@ export class RaceController {
     const mapDots = s.cars.map((c) => ({ x: c.car.st.x, z: c.car.st.z, color: c.team.livery.primary, me: c === p }));
     if (this.ghost && this.ghost.root.visible) mapDots.push({ x: this.ghostPose[0], z: this.ghostPose[2], color: '#ffffff', me: false, ghost: true } as never);
     const sessionBest = kind === 'timetrial' || kind === 'practice' ? (this.bestRecord?.time ?? null) : (s.bestLapOverall?.time ?? null);
+    // Boxen-Panel
+    let pit: HudData['pit'] = null;
+    const cmpName = COMPOUNDS[p.nextCompound].name;
+    if (p.pitTimer > 0) {
+      const done = 1 - p.pitTimer / Math.max(0.1, p.pitDuration);
+      pit = { title: `Boxenstopp ${(p.pitDuration - p.pitTimer).toFixed(1)} s`, detail: `Reifenwechsel auf ${cmpName}`, tone: 'warn', progress: done };
+    } else if (s.time - this.lastPitDoneAt < 4 && p.lastPitStop !== null) {
+      pit = { title: `Standzeit ${p.lastPitStop.toFixed(1)} s`, detail: s.pitPilot ? 'Assistent fährt zur Ausfahrt' : 'Freigabe – auf die Ampel achten', tone: 'good', progress: 1 };
+    } else if (s.inPitLane(p)) {
+      pit = { title: 'Boxengasse', detail: s.pitPilot ? `Assistent aktiv · Tempolimit 80 km/h` : p.pitServed ? 'Zur Ausfahrt' : `Box: ${p.team.short} · Tempolimit 80 km/h`, tone: 'info', progress: null };
+    } else if (p.pitRequest) {
+      const dist = Math.round(s.track.deltaS(st.s, s.track.pit.sEntry) < 0 ? s.track.length + s.track.deltaS(st.s, s.track.pit.sEntry) : s.track.deltaS(st.s, s.track.pit.sEntry));
+      pit = { title: 'Box, Box!', detail: `Einfahrt in ${dist} m · ${cmpName} · ${s.track.pit.side > 0 ? 'links' : 'rechts'} rein`, tone: 'warn', progress: null };
+    }
     return {
       mode: kind,
       lap: lapNo,
@@ -637,6 +670,7 @@ export class RaceController {
       net: this.netInfo ? this.netInfo() : null,
       mapDots,
       raceTime: race && s.phase === 'racing' ? s.time - s.goTime : null,
+      pit,
     };
   }
 
@@ -667,6 +701,7 @@ export class RaceController {
     this.hud.dispose();
     this.trackScene.dispose();
     this.lineView.dispose();
+    this.pitCrew.dispose();
     this.smoke.dispose();
     this.sparks.dispose();
     this.skids.dispose();

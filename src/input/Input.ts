@@ -10,7 +10,7 @@ export interface DriveInput {
   lookBack: boolean;
 }
 
-export type EdgeAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause';
+export type EdgeAction = 'shiftUp' | 'shiftDown' | 'camera' | 'reset' | 'pause' | 'pit';
 
 export class Input {
   private keys = new Set<string>();
@@ -77,7 +77,7 @@ export class Input {
     if (action && this.captureGameKeys) e.preventDefault();
     if (down) {
       if (!this.keys.has(e.code) && action) {
-        if (action === 'shiftUp' || action === 'shiftDown' || action === 'camera' || action === 'reset' || action === 'pause') this.edges.add(action);
+        if (action === 'shiftUp' || action === 'shiftDown' || action === 'camera' || action === 'reset' || action === 'pause' || action === 'pit') this.edges.add(action);
       }
       this.keys.add(e.code);
       this.device = 'keyboard';
@@ -127,6 +127,7 @@ export class Input {
       if (edge(3)) this.edges.add('camera');
       if (edge(2)) this.edges.add('reset');
       if (edge(9) || edge(8)) this.edges.add('pause');
+      if (edge(13)) this.edges.add('pit');
       gpLook = !!b[1];
       this.gpPrevButtons = b;
       gpActive = Math.abs(gpSteer) > 0.02 || gpThrottle > 0.02 || gpBrake > 0.02 || b.some(Boolean);

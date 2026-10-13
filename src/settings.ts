@@ -13,7 +13,8 @@ export type Action =
   | 'camera'
   | 'reset'
   | 'pause'
-  | 'lookBack';
+  | 'lookBack'
+  | 'pit';
 
 export const ACTION_LABELS: Record<Action, string> = {
   throttle: 'Gas',
@@ -27,6 +28,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   reset: 'Fahrzeug zurücksetzen',
   pause: 'Pause',
   lookBack: 'Rückblick',
+  pit: 'Box-Ruf (Boxenstopp anfordern)',
 };
 
 export type Bindings = Record<Action, string[]>;
@@ -43,6 +45,7 @@ export const DEFAULT_BINDINGS: Bindings = {
   reset: ['KeyR'],
   pause: ['Escape'],
   lookBack: ['KeyB'],
+  pit: ['KeyP'],
 };
 
 export type CameraMode = 'tv' | 'close' | 'far' | 'cockpit' | 'front' | 'trackside';

@@ -57,6 +57,7 @@ export interface HudData {
   net: { connected: boolean; ping: number; players: number } | null;
   mapDots: MapDot[];
   raceTime: number | null;
+  pit: { title: string; detail: string; tone: 'info' | 'warn' | 'good'; progress: number | null } | null;
 }
 
 const LED_COUNT = 15;
@@ -75,6 +76,10 @@ export class HUD {
   private bigEl: HTMLDivElement;
   private hintEl: HTMLDivElement;
   private fpsEl: HTMLDivElement;
+  private pitEl: HTMLDivElement;
+  private pitTitle: HTMLDivElement;
+  private pitDetail: HTMLDivElement;
+  private pitBar: HTMLElement;
   private lastTower = '';
 
   constructor(parent: HTMLElement) {
@@ -171,7 +176,15 @@ export class HUD {
     this.bigEl = h('div', { class: 'hud-center-big', style: 'display:none' });
     this.hintEl = h('div', { class: 'hud-hint', style: 'display:none' });
     this.fpsEl = h('div', { class: 'hud-fps', style: 'display:none' });
-    this.root.append(tower, top, pos, driver, dash, gaps, this.msgWrap, this.lightsEl, this.bigEl, this.hintEl, this.fpsEl);
+    this.pitBar = h('i');
+    this.pitEl = h(
+      'div',
+      { class: 'hud-pit box', style: 'display:none' },
+      (this.pitTitle = h('div', { class: 't' })),
+      (this.pitDetail = h('div', { class: 'd' })),
+      h('div', { class: 'bar' }, this.pitBar),
+    );
+    this.root.append(tower, top, pos, driver, dash, gaps, this.pitEl, this.msgWrap, this.lightsEl, this.bigEl, this.hintEl, this.fpsEl);
     parent.appendChild(this.root);
   }
 
@@ -310,6 +323,15 @@ export class HUD {
         el.net.append(h('span', { class: 'dot', style: `background:${col}` }), d.net.connected ? `Online · ${d.net.ping} ms · ${d.net.players} Spieler` : 'Verbindung getrennt');
       }
     } else el.net.style.display = 'none';
+    // Boxen-Panel
+    if (d.pit) {
+      this.pitEl.style.display = '';
+      setText(this.pitTitle, d.pit.title);
+      setText(this.pitDetail, d.pit.detail);
+      this.pitEl.dataset.tone = d.pit.tone;
+      (this.pitBar.parentElement as HTMLElement).style.display = d.pit.progress === null ? 'none' : '';
+      if (d.pit.progress !== null) this.pitBar.style.width = `${Math.round(d.pit.progress * 100)}%`;
+    } else this.pitEl.style.display = 'none';
     this.minimap.draw(d.mapDots);
   }
 

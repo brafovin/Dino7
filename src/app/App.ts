@@ -288,6 +288,8 @@ export class App {
       current: session.player.car.st.compound,
       next: session.player.nextCompound,
       onCompound: (c) => race.setNextCompound(c),
+      pitRequested: session.player.pitRequest,
+      onPitRequest: () => session.togglePitRequest(),
       onResume: () => {
         window.removeEventListener('keydown', escHandler, true);
         resume();

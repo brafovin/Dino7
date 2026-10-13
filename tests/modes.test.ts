@@ -31,7 +31,7 @@ const base: SessionConfig = {
   wearScale: 1,
   startCompound: 'soft',
   transmission: 'auto',
-  assists: { tc: 'high', abs: true, line: 'full', steering: false, brake: false, autoReset: true },
+  assists: { tc: 'high', abs: true, line: 'full', steering: false, brake: false, autoReset: true, pitAssist: true },
   seed: 99,
 };
 const dt = 1 / 120;
@@ -113,13 +113,17 @@ console.log('\n▶ Boxenstopps');
   r.startCountdown();
   let pitIns = 0;
   let pitOuts = 0;
+  let pitLaneHits = 0;
   drive(r, 600, 0.9, () => r.phase === 'finished', (e) => {
     if (e.type === 'pit' && e.stage === 'in') pitIns++;
     if (e.type === 'pit' && e.stage === 'out') pitOuts++;
+    if (e.type === 'impact' && e.speed > 4 && r.inPitLane(r.cars.find((c) => c.id === e.carId)!)) pitLaneHits++;
   });
   const aiStops = r.cars.filter((c) => !c.isPlayer).reduce((a, c) => a + c.pitStops, 0);
   check(aiStops >= 3, `KI fährt bei Verschleiß an die Box (${aiStops} Stopps, ${pitIns} Einfahrten)`);
   check(pitOuts === pitIns, 'jeder Stopp wird abgeschlossen');
+  check(r.cars.every((c) => c.pitStops <= 1), `kein doppelter Stopp (max. ${Math.max(...r.cars.map((c) => c.pitStops))})`);
+  check(pitLaneHits === 0, `keine Anschläge in der Boxengasse (${pitLaneHits})`);
   const fresh = r.cars.filter((c) => c.pitStops > 0).every((c) => Math.max(...c.car.st.tyreWear) < 0.75);
   check(fresh, 'nach dem Stopp frische Reifen');
   check(r.phase === 'finished', 'Rennen mit Boxenstopps wird beendet');
@@ -148,6 +152,67 @@ console.log('\n▶ Boxenstopps');
   check(stopped, 'Spieler-Boxenstopp in der eigenen Box durchgeführt');
   check(p.player.car.st.compound === 'hard', 'gewählte Reifenmischung montiert');
   check(limiterSeen && maxPitSpeed < 80 / 3.6 + 1.5, `Tempolimit in der Boxengasse (max. ${(maxPitSpeed * 3.6).toFixed(1)} km/h)`);
+}
+
+// ------------------------------------------------------------------ Box-Ruf + Boxengassen-Assistent
+console.log('\n▶ Box-Ruf & Boxengassen-Assistent (alle Strecken)');
+{
+  for (const trackId of ['silverstone', 'monaco', 'monza', 'spa', 'suzuka', 'cota', 'yasmarina', 'zandvoort']) {
+    const p = new RaceSession({ ...base, trackId, laps: 3, aiCount: 0, wearScale: 1 }, 'race');
+    p.startCountdown();
+    p.player.nextCompound = 'medium';
+    // „Fahrer“ ohne Boxenwissen: fährt einfach die Ideallinie
+    const human = new AIDriver(p.player.car, p.track, p.line, { grip: 0.9, brake: 0.87, racecraft: 0, consistency: 1 }, 'dry', 5);
+    let requested = false;
+    let takeover = false;
+    let released = false;
+    let pitIn = 0;
+    let pitOut = 0;
+    let wallHitsInPit = 0;
+    let stopAtBox = Infinity;
+    const box = p.boxOf(p.player);
+    let lapAfterStop = false;
+    let stopLap = -1;
+    for (let k = 0; k < 120 * 400; k++) {
+      // Box-Ruf in der ersten Runde, sobald die Einfahrt noch weit genug entfernt ist
+      if (!requested && p.phase === 'racing' && p.time - p.goTime > 3 && p.track.deltaS(p.player.car.st.s, p.track.pit.sEntry) > 400) {
+        p.togglePitRequest();
+        requested = true;
+      }
+      const inp = human.update(dt, [{ car: p.player.car, id: 0 }], 0, p.phase === 'racing');
+      p.step(dt, inp);
+      if (p.pitPilot) takeover = true;
+      if (takeover && !p.pitPilot && pitOut > 0) released = true;
+      for (const e of p.drainEvents()) {
+        if (e.type === 'pit' && e.stage === 'in') {
+          pitIn++;
+          stopAtBox = Math.abs(p.track.deltaS(p.player.car.st.s, box));
+          stopLap = p.player.lap.completed;
+        }
+        if (e.type === 'pit' && e.stage === 'out') pitOut++;
+        if (e.type === 'impact' && p.inPitLane(p.player)) wallHitsInPit++;
+      }
+      if (pitOut > 0 && p.player.lap.completed > stopLap + 1) {
+        lapAfterStop = true;
+        break;
+      }
+    }
+    const ok = requested && takeover && pitIn === 1 && pitOut === 1 && stopAtBox < 6 && released && lapAfterStop && wallHitsInPit === 0 && p.player.car.st.compound === 'medium' && p.player.pitStops === 1;
+    check(
+      ok,
+      `${trackId}: Box-Ruf → Assistent fährt in Box ${p.track.pit.boxes.indexOf(box) + 1} (Δs ${stopAtBox.toFixed(1)} m), ` +
+        `1 Stopp (${pitIn}/${pitOut}), Freigabe ${released ? 'ja' : 'nein'}, Weiterfahrt ${lapAfterStop ? 'ja' : 'nein'}, Anschläge ${wallHitsInPit}, Reifen ${p.player.car.st.compound}`,
+    );
+  }
+  // Ohne Box-Ruf: Spieler fährt nicht in die Box, auch wenn er die Einfahrt passiert
+  const n = new RaceSession({ ...base, laps: 2, aiCount: 0 }, 'race');
+  n.startCountdown();
+  drive(n, 200, 0.9, () => n.player.lap.completed >= 1);
+  check(n.player.pitStops === 0 && !n.pitPilot, 'ohne Box-Ruf kein Boxenstopp und kein Assistent');
+  // Box-Ruf zurücknehmen
+  n.togglePitRequest();
+  n.togglePitRequest();
+  check(!n.player.pitRequest, 'Box-Ruf lässt sich wieder absagen');
 }
 
 // ------------------------------------------------------------------ Strafen & Reset
