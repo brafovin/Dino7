@@ -1003,30 +1003,34 @@ export class TrackScene {
 
   private buildBrakeBoards(): void {
     const tr = this.track;
-    const geos: Record<string, THREE.BufferGeometry[]> = { '100': [], '150': [], '200': [] };
+    const boards: Record<string, THREE.BufferGeometry[]> = { '100': [], '150': [], '200': [] };
+    const posts: THREE.BufferGeometry[] = [];
     for (const c of tr.corners) {
       if (c.minRadius > 140) continue;
       const side = -c.dir;
       for (const dist of [100, 150, 200]) {
         const s = c.start * tr.spacing - dist;
         const i = tr.indexAt(s);
+        // nicht in der Boxengasse aufstellen
+        if (tr.inRange(s, tr.pit.sEntry, tr.pit.sExit) && side === tr.pit.side) continue;
         const bar = side > 0 ? tr.barL[i] : tr.barR[i];
         tr.pointAt(s, side * Math.max(tr.halfW[i] + 3, bar - 1.2), pt);
         const g = new THREE.PlaneGeometry(1.4, 0.9);
         g.rotateY(Math.atan2(pt.tx, pt.tz) + Math.PI);
         g.translate(pt.x, pt.y + 1.6, pt.z);
-        geos[String(dist)].push(g);
+        boards[String(dist)].push(g);
         const post = new THREE.BoxGeometry(0.08, 1.2, 0.08);
+        post.deleteAttribute('uv');
         post.translate(pt.x, pt.y + 0.6, pt.z);
-        geos['100'].push(post.toNonIndexed().deleteAttribute('uv') as unknown as THREE.BufferGeometry);
+        posts.push(post);
       }
     }
-    for (const key of Object.keys(geos)) {
-      const list = geos[key].filter((g) => g.getAttribute('uv'));
-      if (!list.length) continue;
+    for (const key of Object.keys(boards)) {
+      if (!boards[key].length) continue;
       const tex = textDecal(key, '#111111', '#ffffff', 128, 80);
-      this.add(mergeGeometries(list.map((g) => (g.index ? g.toNonIndexed() : g)))!, this.mat({ map: tex, roughness: 0.6, side: THREE.DoubleSide }), { receive: false });
+      this.add(mergeGeometries(boards[key])!, this.mat({ map: tex, roughness: 0.6, side: THREE.DoubleSide }), { receive: false });
     }
+    if (posts.length) this.add(mergeGeometries(posts)!, this.mat({ color: 0x55595f, roughness: 0.6 }), { receive: false });
   }
 
   // ---------------------------------------------------------------- Bebauung
@@ -1088,7 +1092,7 @@ export class TrackScene {
     const env = this.env;
     const tr = this.track;
     if (env.trees <= 0 || !this.terrainH) return;
-    const cap = this.quality === 'low' ? 1500 : this.quality === 'medium' ? 4500 : 9000;
+    const cap = this.quality === 'low' ? 1200 : this.quality === 'medium' ? 3500 : 7000;
     const area = (tr.maxX - tr.minX + 800) * (tr.maxZ - tr.minZ + 800);
     const target = Math.min(cap, Math.round((area / 1600) * env.trees));
     const positions: { x: number; y: number; z: number; s: number; r: number }[] = [];
@@ -1110,20 +1114,20 @@ export class TrackScene {
     }
     if (!positions.length) return;
     const type = env.treeType;
-    const trunkGeo = type === 'palm' ? new THREE.CylinderGeometry(0.22, 0.32, 9, 6).translate(0, 4.5, 0) : new THREE.CylinderGeometry(0.25, 0.4, 4, 6).translate(0, 2, 0);
+    const trunkGeo = type === 'palm' ? new THREE.CylinderGeometry(0.22, 0.32, 9, 5, 1, true).translate(0, 4.5, 0) : new THREE.CylinderGeometry(0.25, 0.4, 4, 5, 1, true).translate(0, 2, 0);
     let crownGeo: THREE.BufferGeometry;
-    if (type === 'pine') crownGeo = new THREE.ConeGeometry(2.6, 9, 7).translate(0, 8, 0);
+    if (type === 'pine') crownGeo = new THREE.ConeGeometry(2.6, 9, 6, 1, true).translate(0, 8, 0);
     else if (type === 'palm') {
       const leaves: THREE.BufferGeometry[] = [];
       for (let k = 0; k < 7; k++) {
-        const leaf = new THREE.ConeGeometry(0.5, 4.2, 4);
+        const leaf = new THREE.ConeGeometry(0.5, 4.2, 3, 1, true);
         leaf.rotateZ(Math.PI / 2 + 0.5);
         leaf.translate(2.0, 8.6, 0);
         leaf.rotateY((k / 7) * Math.PI * 2);
         leaves.push(leaf.toNonIndexed());
       }
       crownGeo = mergeGeometries(leaves)!;
-    } else crownGeo = new THREE.IcosahedronGeometry(3.4, 1).scale(1, 0.85, 1).translate(0, 6.2, 0);
+    } else crownGeo = new THREE.IcosahedronGeometry(3.4, 0).scale(1, 0.85, 1).translate(0, 6.2, 0);
     const trunkMat = this.mat({ color: type === 'palm' ? 0x8a7458 : 0x5b4532, roughness: 1 });
     const crownMat = this.mat({ color: 0xffffff, roughness: 0.95, flatShading: true });
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, positions.length);

@@ -324,24 +324,24 @@ function buildBodyGeometry(team: Team, detail: number): THREE.BufferGeometry {
       (_x, y, z, out) => out.copy(z < -1.6 && y > 0.7 ? pal.a : pal.s),
     ),
   );
-  // Seitenkästen
+  // Seitenkästen (flach, mit Taille nach hinten)
   for (const side of [1, -1]) {
     parts.push(
       loft(
         [
-          { z: 0.62, x: side * 0.58, y: 0.36, w: 0.34, h: 0.34, n: 2.2 },
-          { z: 0.45, x: side * 0.6, y: 0.37, w: 0.42, h: 0.4 },
-          { z: -0.2, x: side * 0.6, y: 0.36, w: 0.44, h: 0.4 },
-          { z: -0.9, x: side * 0.5, y: 0.32, w: 0.34, h: 0.32 },
-          { z: -1.5, x: side * 0.36, y: 0.26, w: 0.2, h: 0.2 },
-          { z: -1.85, x: side * 0.26, y: 0.24, w: 0.08, h: 0.1 },
+          { z: 0.66, x: side * 0.56, y: 0.35, w: 0.3, h: 0.26, n: 2.2 },
+          { z: 0.5, x: side * 0.6, y: 0.36, w: 0.4, h: 0.33, n: 2.4 },
+          { z: 0.0, x: side * 0.6, y: 0.35, w: 0.42, h: 0.34, n: 2.4 },
+          { z: -0.6, x: side * 0.52, y: 0.31, w: 0.34, h: 0.28, n: 2.3 },
+          { z: -1.2, x: side * 0.4, y: 0.25, w: 0.22, h: 0.18, n: 2.2 },
+          { z: -1.7, x: side * 0.28, y: 0.21, w: 0.1, h: 0.08, n: 2.2 },
         ],
         seg,
         body,
       ),
     );
     // Kühlöffnung
-    parts.push(box(0.26, 0.24, 0.02, side * 0.6, 0.37, 0.63, 0x050506));
+    parts.push(box(0.24, 0.2, 0.02, side * 0.57, 0.36, 0.67, 0x050506));
     // Spiegel
     parts.push(box(0.14, 0.07, 0.04, side * 0.5, 0.72, 0.45, body));
     parts.push(rod(new THREE.Vector3(side * 0.3, 0.6, 0.5), new THREE.Vector3(side * 0.47, 0.71, 0.45), 0.01, carbon));

@@ -31,7 +31,6 @@ export class CameraRig {
   private yaw = 0;
   private initialized = false;
   private shake = 0;
-  private trackHint = -1;
   private tsCams: { s: number; x: number; y: number; z: number }[] = [];
   private tsIndex = -1;
   private fov = 62;
@@ -135,8 +134,9 @@ export class CameraRig {
       // Nicht durch Barrieren oder unter die Fahrbahn
       if (this.track) {
         const tr = this.track;
-        tr.project(desired.x, desired.z, this.trackHint >= 0 ? this.trackHint : st.trackIdx, tmpProj);
-        this.trackHint = tmpProj.i;
+        // Immer vom Streckenindex des Autos aus projizieren (Kamera ist stets nahe am Auto);
+        // ein eigener, veralteter Index könnte auf benachbarte Streckenabschnitte springen.
+        tr.project(desired.x, desired.z, st.trackIdx, tmpProj);
         const bar = tmpProj.d > 0 ? tr.barrierAt(tmpProj.s, true) : tr.barrierAt(tmpProj.s, false);
         const maxD = bar - 0.6;
         if (Math.abs(tmpProj.d) > maxD && Math.abs(st.d) < bar) {

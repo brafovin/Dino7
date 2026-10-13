@@ -116,5 +116,79 @@ if (scenario.startsWith('tour')) {
   const info = await page.evaluate(() => ({ ...window.__app.renderer.info(), fps: window.__app.fpsText }));
   console.log('renderinfo', JSON.stringify(info));
 }
+if (scenario === 'menus') {
+  await page.click('text=Verstanden').catch(() => undefined);
+  await page.waitForTimeout(1500);
+  await shot('m01-main');
+  await page.click('text=Spielmodus wählen');
+  await page.waitForTimeout(600);
+  await shot('m02-mode');
+  await page.click('.mode-card:has-text("Grand Prix")');
+  await page.waitForTimeout(800);
+  await shot('m03-driver');
+  await page.click('.driver-card:has-text("Oscar Piastri")');
+  await page.waitForTimeout(600);
+  await page.click('text=Weiter →');
+  await page.waitForTimeout(4000);
+  await shot('m04-track');
+  await page.click('.track-card:has-text("Suzuka")');
+  await page.click('text=Weiter →');
+  await page.waitForTimeout(3000);
+  await shot('m05-config');
+  await page.click('text=Alle Einstellungen');
+  await page.waitForTimeout(600);
+  await shot('m06-settings-gameplay');
+  await page.click('.tabs button:has-text("Steuerung")');
+  await page.waitForTimeout(400);
+  await shot('m07-settings-controls');
+  await page.click('.tabs button:has-text("Grafik")');
+  await page.waitForTimeout(300);
+  await shot('m08-settings-graphics');
+  await page.click('text=Fertig');
+  await page.waitForTimeout(400);
+  await page.click('text=← Zurück');
+  await page.waitForTimeout(400);
+  await page.click('text=← Zurück');
+  await page.waitForTimeout(400);
+  await page.click('text=← Zurück');
+  await page.waitForTimeout(400);
+  await page.click('text=← Zurück');
+  await page.waitForTimeout(600);
+  await page.click('text=Online-Multiplayer');
+  await page.waitForTimeout(600);
+  await shot('m09-mp-connect');
+}
+if (scenario.startsWith('views')) {
+  const [, track = 'silverstone'] = scenario.split(':');
+  await page.click('text=Verstanden').catch(() => undefined);
+  await page.evaluate((track) => {
+    const app = window.__app;
+    app.settings.update((s) => (s.graphics.quality = 'medium'));
+    app.applyQuality();
+    app.startSession({ mode: 'grandprix', trackId: track, laps: 1, weather: 'dry', difficulty: 'normal', playerDriverId: 'piastri', aiCount: 5, startMode: 'pole', wearScale: 1, startCompound: 'soft', transmission: 'manual', assists: { tc: 'low', abs: true, line: 'full', steering: false, brake: false, autoReset: true }, seed: 3 }, 'race');
+  }, track);
+  await page.waitForTimeout(Number(process.env.WAIT ?? 15000));
+  for (const cam of ['cockpit', 'front', 'far', 'trackside']) {
+    await page.evaluate((cam) => {
+      const app = window.__app;
+      app.settings.update((s) => (s.camera.mode = cam));
+      app.applyRuntimeSettings();
+    }, cam);
+    await page.waitForTimeout(3500);
+    await shot(`v-${track}-${cam}`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1500);
+  await shot(`v-${track}-pause`);
+  await page.click('text=Fortsetzen');
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const app = window.__app;
+    app.session.forceFinish();
+    app.showResults();
+  });
+  await page.waitForTimeout(2500);
+  await shot(`v-${track}-results`);
+}
 console.log(logs.slice(0, 40).join('\n'));
 await browser.close();

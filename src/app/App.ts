@@ -14,7 +14,8 @@ import { getDriver } from '../shared/teams';
 import { type GameMode, type SessionConfig } from '../sim/config';
 import type { ISession } from '../sim/ISession';
 import { RaceSession, type SessionKind } from '../sim/RaceSession';
-import { Menus } from '../ui/Menus';
+import { getPreviewTrack, Menus } from '../ui/Menus';
+import { TRACK_DEFS } from '../shared/trackDefs';
 
 type AppState = 'menu' | 'loading' | 'race';
 
@@ -73,6 +74,25 @@ export class App {
       this.menus.controlsHelp(() => this.settings.update((s) => (s.firstRunDone = true)));
     }
     requestAnimationFrame(this.loop);
+    this.precomputePreviews();
+  }
+
+  /** Streckenvorschauen im Leerlauf berechnen, damit die Streckenauswahl ohne Ruckler öffnet. */
+  private precomputePreviews(): void {
+    const ids = TRACK_DEFS.map((d) => d.id);
+    const idle = (cb: () => void) => {
+      const w = window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+      if (w.requestIdleCallback) w.requestIdleCallback(cb, { timeout: 2000 });
+      else window.setTimeout(cb, 50);
+    };
+    const next = () => {
+      const id = ids.shift();
+      if (!id) return;
+      if (this.state === 'menu') getPreviewTrack(id);
+      else ids.unshift(id);
+      idle(next);
+    };
+    idle(next);
   }
 
   click(): void {

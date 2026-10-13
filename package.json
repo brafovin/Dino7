@@ -12,9 +12,10 @@
     "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node18 --packages=external --outfile=dist-server/index.js",
     "start": "node dist-server/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "test": "tsx tests/sim.test.ts && tsx tests/multiplayer.test.ts",
+    "test": "tsx tests/sim.test.ts && tsx tests/modes.test.ts && tsx tests/multiplayer.test.ts",
     "test:sim": "tsx tests/sim.test.ts",
     "test:mp": "tsx tests/multiplayer.test.ts",
+    "test:modes": "tsx tests/modes.test.ts",
     "test:e2e": "node tests/e2e.mjs"
   },
   "dependencies": {
