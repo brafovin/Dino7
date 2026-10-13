@@ -96,6 +96,18 @@ Boxenstopps, Strafen → Zielflagge → Ergebnis mit Platzierung, Zeit/Abstand, 
 Stopps und Strafen. Nach deiner Zieldurchfahrt übernimmt ein Autopilot die Auslaufrunde, das Ergebnis
 aktualisiert sich live; „Rennen beenden“ wertet nicht angekommene Fahrzeuge hochgerechnet (markiert mit `*`).
 
+### Siegerehrung (Podium)
+Nach dem Rennen gibt es eine Siegerehrung als eigene 3D-Szene: Podest 2 – 1 – 3, darauf die drei
+Erstplatzierten als Figuren im Rennanzug ihres Teams (Teamfarben, Startnummer, Teamkappe,
+Sonnenbrille), Pokale in Gold, Silber und Bronze, danach Champagner, dazu Konfetti, Feuerwerk,
+Fanfare und Jubel; die drei Autos stehen davor, die Kamera fährt von der Totale an die Fahrer heran.
+
+* Stehst du selbst auf dem Podest, startet die Siegerehrung automatisch, sobald die ersten drei im
+  Ziel sind („SIEG!“ bzw. „Podium – P2/P3“).
+* Sonst lässt sie sich im Ergebnis über **🏆 Siegerehrung** öffnen (im Einzelspieler wird ein noch
+  laufendes Rennen dafür gewertet und hochgerechnet).
+* „Zum Ergebnis“ führt zurück zur Ergebnisliste; funktioniert auch im Online-Multiplayer.
+
 ### Boxenstopps und Boxengasse
 Jede Strecke hat eine Boxengasse mit Ein- und Ausfahrt, Boxenmauer, 80-km/h-Tempolimit
 (Schilder „80“/„ENDE 80“, HUD-Anzeige „PIT 80“), elf Boxenplätzen in Teamfarben
@@ -357,3 +369,5 @@ Verlassen aufgeräumt, globale Fehlerbehandlung mit verständlichen Meldungen.
   auf integrierten GPUs „Mittel“ oder „Niedrig“ wählen. Änderungen an der Qualität wirken auf die
   Streckenszene ab dem nächsten Rennen.
 * Audio startet erst nach der ersten Benutzerinteraktion (Browser-Richtlinie).
+* Siegerehrung: Die Fahrer sind stilisierte Figuren (einfache Körperformen, keine echten Gesichter
+  oder Porträts), Animationen sind einfache Posen ohne Motion-Capture.
