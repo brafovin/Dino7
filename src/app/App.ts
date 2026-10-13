@@ -4,11 +4,13 @@ import { RaceController } from '../game/RaceController';
 import { Input } from '../input/Input';
 import { NetClient } from '../net/NetClient';
 import { NetRaceSession } from '../net/NetRaceSession';
+import { PodiumScene } from '../render/Podium';
 import { Renderer } from '../render/Renderer';
 import { Showroom } from '../render/Showroom';
 import { SettingsStore } from '../settings';
 import type { Compound } from '../shared/carPhysics';
 import type { RaceLoadMsg } from '../shared/protocol';
+import type { ResultRow } from '../sim/RaceSession';
 import type { Driver, Team } from '../shared/teams';
 import { getDriver } from '../shared/teams';
 import { type GameMode, type SessionConfig } from '../sim/config';
@@ -17,7 +19,7 @@ import { RaceSession, type SessionKind } from '../sim/RaceSession';
 import { getPreviewTrack, Menus } from '../ui/Menus';
 import { TRACK_DEFS } from '../shared/trackDefs';
 
-type AppState = 'menu' | 'loading' | 'race';
+type AppState = 'menu' | 'loading' | 'race' | 'podium';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -38,6 +40,11 @@ export class App {
   private fpsText = '';
   private orbitT = 0;
   private resultsShown = false;
+  /** Siegerehrung (3D-Szene) und Automatik nach dem Zieleinlauf der ersten drei */
+  private podium: PodiumScene | null = null;
+  private podiumAutoDone = false;
+  private podiumReadyFor = 0;
+  private podiumCheckAcc = 0;
   private lastConfig: { cfg: SessionConfig; kind: SessionKind; grid?: string[] } | null = null;
   /** Ablaufdaten des aktuellen Menüflusses */
   readonly flow: { mode: GameMode; compound: Compound } = { mode: 'grandprix', compound: 'medium' };
@@ -135,10 +142,16 @@ export class App {
           this.orbitT += dt;
           this.race.frame(dt);
           this.race.orbitCamera(dt, this.orbitT);
+          this.checkAutoPodium(dt);
         } else {
           this.race.frame(dt);
         }
         this.race.hud.fps(this.settings.data.graphics.showFps ? this.fpsText : null);
+        this.renderer.render();
+      } else if (this.state === 'podium' && this.podium) {
+        const cam = this.renderer.camera;
+        this.podium.update(dt, cam, cam.aspect);
+        if (this.renderer.scene !== this.podium.scene) this.renderer.setScene(this.podium.scene);
         this.renderer.render();
       } else if (this.state === 'menu') {
         this.showroom.update(dt, this.renderer.camera, this.renderer.camera.aspect);
@@ -152,7 +165,7 @@ export class App {
   };
 
   private fatal(e: Error): void {
-    if (this.state === 'race') {
+    if (this.state === 'race' || this.state === 'podium') {
       this.endRace();
       this.menus.main();
     }
@@ -233,6 +246,8 @@ export class App {
   private mountRace(session: ISession): void {
     this.session = session;
     this.resultsShown = false;
+    this.podiumAutoDone = false;
+    this.podiumReadyFor = 0;
     this.orbitT = 0;
     this.race = new RaceController(session, this.renderer, this.settings.data, this.input, this.audio, this.hudRoot, {
       onPause: () => this.openPause(),
@@ -245,6 +260,10 @@ export class App {
   }
 
   endRace(): void {
+    if (this.podium) {
+      this.podium.dispose();
+      this.podium = null;
+    }
     for (const u of this.mpUnsub) u();
     this.mpUnsub = [];
     if (this.race) {
@@ -257,6 +276,85 @@ export class App {
     this.renderer.setScene(this.showroom.scene);
     this.audio.silence();
     this.state = 'menu';
+  }
+
+  /** Die ersten drei stehen fest (im Ziel) bzw. das Rennen ist beendet. */
+  private podiumReady(session: ISession, rows: ResultRow[]): boolean {
+    if (session.phase === 'finished') return true;
+    const top = rows.slice(0, 3);
+    return top.length > 0 && top.every((r) => r.status === 'Im Ziel');
+  }
+
+  /** Nach dem Zieleinlauf der ersten drei: Siegerehrung automatisch starten, wenn du auf dem Podest stehst. */
+  private checkAutoPodium(dt: number): void {
+    const session = this.session;
+    if (!session || this.podiumAutoDone || this.podium || (session.kind !== 'race' && session.kind !== 'multiplayer')) return;
+    this.podiumCheckAcc += dt;
+    if (this.podiumCheckAcc < 0.25) return;
+    const step = this.podiumCheckAcc;
+    this.podiumCheckAcc = 0;
+    const rows = session.results();
+    if (!this.podiumReady(session, rows)) {
+      this.podiumReadyFor = 0;
+      return;
+    }
+    this.podiumReadyFor += step;
+    if (this.podiumReadyFor < 2.5) return;
+    this.podiumAutoDone = true;
+    if (rows.slice(0, 3).some((r) => r.carId === session.player.id)) this.showPodium();
+  }
+
+  /** Siegerehrung mit den ersten drei als 3D-Szene zeigen. */
+  showPodium(): void {
+    const race = this.race;
+    const session = this.session;
+    if (!race || !session || this.podium) return;
+    let rows = session.results();
+    // Einzelspieler: noch nicht alle drei im Ziel → Rennen werten (hochgerechnet)
+    if (!this.podiumReady(session, rows) && session instanceof RaceSession) {
+      session.forceFinish();
+      rows = session.results();
+    }
+    const top = rows.slice(0, 3);
+    if (!top.length) return;
+    this.podiumAutoDone = true;
+    const mp = session.kind === 'multiplayer';
+    if (!mp) race.setPaused(true);
+    else this.audio.silence();
+    this.podium = new PodiumScene(
+      this.renderer,
+      top.map((r, i) => ({ position: (i + 1) as 1 | 2 | 3, driver: r.driver, team: r.team })),
+      session.track.def.name,
+    );
+    this.state = 'podium';
+    this.renderer.setScene(this.podium.scene);
+    this.audio.celebrate();
+    this.menus.podium({
+      trackName: session.track.def.name,
+      rows: top,
+      playerCarId: session.player.id,
+      menuLabel: mp ? 'Zur Lobby' : 'Hauptmenü',
+      onContinue: () => this.closePodium(true),
+      onMenu: () => {
+        this.closePodium(false);
+        this.endRace();
+        if (mp) {
+          if (this.net.lobby) this.menus.lobby();
+          else this.menus.lobbyConnect();
+        } else this.menus.main();
+      },
+    });
+  }
+
+  private closePodium(reopenResults: boolean): void {
+    if (!this.podium) return;
+    this.podium.dispose();
+    this.podium = null;
+    if (!this.race) return;
+    this.state = 'race';
+    this.renderer.setScene(this.race.scene);
+    if (this.session?.kind !== 'multiplayer') this.race.setPaused(false);
+    if (reopenResults) this.openResultsMenu();
   }
 
   private openPause(): void {
@@ -320,6 +418,13 @@ export class App {
     this.resultsShown = true;
     race.hud.setVisible(false);
     this.input.captureGameKeys = false;
+    this.openResultsMenu();
+  }
+
+  /** Ergebnisanzeige (auch nach der Siegerehrung erneut). */
+  private openResultsMenu(): void {
+    const session = this.session;
+    if (!session) return;
     const toMenu = () => {
       this.endRace();
       this.menus.main();
@@ -358,6 +463,7 @@ export class App {
         live: true,
         showRace: true,
         buttons: [
+          { label: '🏆 Siegerehrung', fn: () => this.showPodium() },
           {
             label: 'Zur Lobby',
             primary: true,
@@ -387,6 +493,7 @@ export class App {
             session.forceFinish();
           },
         },
+        { label: '🏆 Siegerehrung', fn: () => this.showPodium() },
         {
           label: 'Nochmal fahren',
           primary: true,

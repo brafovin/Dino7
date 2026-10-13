@@ -933,6 +933,51 @@ export class Menus {
     );
   }
 
+  // ------------------------------------------------------------------ Siegerehrung
+
+  podium(opts: {
+    trackName: string;
+    rows: ResultRow[];
+    playerCarId: number;
+    onContinue: () => void;
+    onMenu: () => void;
+    menuLabel: string;
+  }): void {
+    const s = this.screen('screen podium');
+    const top = opts.rows.slice(0, 3);
+    const mine = top.find((r) => r.carId === opts.playerCarId);
+    const headline = mine ? (mine.position === 1 ? 'Sieg!' : `Podium – P${mine.position}`) : 'Siegerehrung';
+    s.append(h('div', { class: 'podium-head' }, h('small', null, `${opts.trackName} · Siegerehrung`), h('h2', { class: mine?.position === 1 ? 'win' : '' }, headline)));
+    const card = (r: ResultRow | undefined, pos: number) =>
+      r
+        ? h(
+            'div',
+            { class: `podium-card p${pos} ${r.carId === opts.playerCarId ? 'me' : ''}`, style: `--team:${r.team.livery.primary}` },
+            h('div', { class: 'place' }, String(pos)),
+            h(
+              'div',
+              { class: 'who' },
+              h('div', { class: 'name' }, r.name ? `${r.name}` : r.driver.name, r.carId === opts.playerCarId ? h('span', { class: 'you' }, 'Du') : null),
+              h('div', { class: 'team' }, r.team.name),
+              h('div', { class: 'time' }, pos === 1 ? formatTime(r.time) : r.gapText, r.estimated ? ' *' : ''),
+            ),
+          )
+        : h('div', { class: `podium-card p${pos} empty` }, h('div', { class: 'place' }, String(pos)), h('div', { class: 'who' }, h('div', { class: 'team' }, '—')));
+    s.append(
+      h(
+        'div',
+        { class: 'podium-bottom' },
+        h('div', { class: 'podium-cards' }, card(top[1], 2), card(top[0], 1), card(top[2], 3)),
+        h(
+          'div',
+          { class: 'bottombar' },
+          h('button', { class: 'btn', onclick: () => (this.app.click(), opts.onMenu()) }, opts.menuLabel),
+          h('button', { class: 'btn primary', onclick: () => (this.app.click(), opts.onContinue()) }, 'Zum Ergebnis ▶'),
+        ),
+      ),
+    );
+  }
+
   // ------------------------------------------------------------------ Fehler
 
   error(title: string, message: string, onClose?: () => void): void {

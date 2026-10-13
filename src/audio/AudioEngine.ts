@@ -352,6 +352,68 @@ export class AudioEngine {
     o.stop(t + dur + 0.02);
   }
 
+  /** Siegerehrung: kurze Fanfare, Jubel der Zuschauer und Applaus. */
+  celebrate(): void {
+    if (!this.ctx || !this.started) return;
+    const ctx = this.ctx;
+    const t0 = ctx.currentTime + 0.05;
+    const note = (freq: number, at: number, dur: number, gain: number) => {
+      for (const [type, mult, g] of [
+        ['triangle', 1, 1],
+        ['square', 0.5, 0.18],
+      ] as const) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.frequency.value = freq * mult;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 2600;
+        const env = ctx.createGain();
+        env.gain.setValueAtTime(0.0001, t0 + at);
+        env.gain.exponentialRampToValueAtTime(gain * g, t0 + at + 0.025);
+        env.gain.setTargetAtTime(gain * g * 0.6, t0 + at + 0.06, 0.08);
+        env.gain.setTargetAtTime(0.0001, t0 + at + dur, 0.12);
+        o.connect(lp).connect(env).connect(this.fxBus);
+        o.start(t0 + at);
+        o.stop(t0 + at + dur + 0.8);
+      }
+    };
+    // C – E – G – C' … Schlussakkord
+    const seq: [number, number, number][] = [
+      [523.25, 0, 0.16],
+      [659.25, 0.18, 0.16],
+      [783.99, 0.36, 0.16],
+      [1046.5, 0.54, 0.34],
+      [783.99, 0.92, 0.14],
+      [1046.5, 1.08, 1.3],
+    ];
+    for (const [f, at, d] of seq) note(f, at, d, 0.1);
+    for (const f of [523.25, 659.25, 783.99]) note(f, 1.08, 1.3, 0.05);
+    // Jubel: gefiltertes Rauschen, an- und abschwellend
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1100;
+    bp.Q.value = 0.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.32, t0 + 1.4);
+    g.gain.setTargetAtTime(0.18, t0 + 3, 1.2);
+    g.gain.setTargetAtTime(0.0001, t0 + 9, 1.5);
+    src.connect(bp).connect(g).connect(this.ambBus);
+    src.start(t0);
+    src.stop(t0 + 16);
+    // Applaus: viele kurze Klatscher
+    for (let k = 0; k < 140; k++) {
+      const at = 0.4 + Math.random() * 8;
+      setTimeout(() => {
+        if (this.ctx === ctx) this.burst(0.05 + Math.random() * 0.06, 1500 + Math.random() * 1800, 0.05, this.ambBus);
+      }, at * 1000);
+    }
+  }
+
   dispose(): void {
     this.ctx?.close().catch(() => undefined);
     this.ctx = null;

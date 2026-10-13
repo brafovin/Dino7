@@ -229,6 +229,75 @@ if (scenario.startsWith('brake')) {
   }
   await page.keyboard.up('KeyW');
 }
+if (scenario.startsWith('podium')) {
+  // Siegerehrung: kurzes Rennen starten, werten lassen und die Zeremonie abfilmen
+  const [, track = 'silverstone', driver = 'leclerc'] = scenario.split(':');
+  await page.click('text=Verstanden').catch(() => undefined);
+  await page.evaluate(
+    ({ track, driver }) => {
+      const app = window.__app;
+      app.settings.update((s) => (s.graphics.quality = 'medium'));
+      app.applyQuality();
+      app.startSession(
+        { mode: 'grandprix', trackId: track, laps: 1, weather: 'dry', difficulty: 'normal', playerDriverId: driver, aiCount: 9, startMode: 'pole', wearScale: 1, startCompound: 'medium', transmission: 'auto', assists: { tc: 'high', abs: true, line: 'off', steering: true, brake: false, autoReset: true, pitAssist: true, brakeHint: false }, seed: 3 },
+        'race',
+      );
+    },
+    { track, driver },
+  );
+  await page.waitForTimeout(Number(process.env.WAIT ?? 15000));
+  // Startphase abwarten, dann Rennen werten (Spieler startet von der Pole)
+  for (let k = 0; k < 120; k++) {
+    if (await page.evaluate(() => window.__app.session.phase === 'racing')) break;
+    await page.waitForTimeout(250);
+  }
+  await page.evaluate(() => window.__app.session.forceFinish());
+  let auto = false;
+  for (let k = 0; k < 80; k++) {
+    if (await page.evaluate(() => document.querySelector('.screen.podium') !== null)) {
+      auto = true;
+      break;
+    }
+    await page.waitForTimeout(250);
+  }
+  const me = await page.evaluate(() => window.__app.session.player.position);
+  console.log('podium', JSON.stringify({ auto, playerPos: me }));
+  if (!auto) {
+    // nicht auf dem Podest: Siegerehrung über den Button im Ergebnis öffnen
+    await page.click('text=Siegerehrung');
+    await page.waitForTimeout(500);
+  }
+  // CLOSE="x,y,z,tx,ty,tz": Nahaufnahme (überschreibt die Kamerafahrt nur im Werkzeug)
+  if (process.env.CLOSE) {
+    await page.evaluate((c) => {
+      const [x, y, z, tx, ty, tz] = c.split(',').map(Number);
+      const pod = window.__app.podium;
+      const orig = pod.update.bind(pod);
+      pod.update = (dt, cam, aspect) => {
+        orig(dt, cam, aspect);
+        cam.position.set(x, y, z);
+        cam.lookAt(tx, ty, tz);
+      };
+      document.querySelector('.screen.podium').style.display = 'none';
+    }, process.env.CLOSE);
+  }
+  // FF=8.5,11 : Szenenzeit der Zeremonie vorspulen (Headless-Rendering ist langsam)
+  for (const ff of (process.env.FF ?? '').split(',').filter(Boolean).map(Number)) {
+    await page.evaluate((ff) => (window.__app.podium.t = ff), ff);
+    await page.waitForTimeout(Number(process.env.FFWAIT ?? 3000));
+    await shot(`podium-${track}-ff${ff}`);
+  }
+  const t0 = Date.now();
+  for (const at of (process.env.AT ?? '1500,4000,7000,10500,14000').split(',').map(Number).filter((x) => x > 0)) {
+    await page.waitForTimeout(Math.max(0, at - (Date.now() - t0)));
+    await shot(`podium-${track}-${at}`);
+  }
+  // Weiter zum Ergebnis
+  await page.click('text=Zum Ergebnis').catch(() => undefined);
+  await page.waitForTimeout(1200);
+  await shot(`podium-${track}-results`);
+  console.log('errors', JSON.stringify(logs.filter((l) => l.includes('error') || l.includes('pageerror'))));
+}
 if (scenario === 'menus') {
   await page.click('text=Verstanden').catch(() => undefined);
   await page.waitForTimeout(1500);
