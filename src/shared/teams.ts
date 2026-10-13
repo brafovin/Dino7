@@ -73,7 +73,7 @@ export const TEAMS: Team[] = [
       id: 'ferrari',
       name: 'Ferrari',
       short: 'FER',
-      livery: { primary: '#d40000', secondary: '#ffe600', accent: '#ffffff', carbon: '#1a1a1a', pattern: 'band' },
+      livery: { primary: '#d40000', secondary: '#f4f4f4', accent: '#ffd800', carbon: '#1a1a1a', pattern: 'band' },
       perf: { power: 1.01, downforce: 1.01, drag: 1.0, tyreWear: 1.0 },
     },
     [

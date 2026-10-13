@@ -153,7 +153,7 @@ export const TRACK_DEFS: TrackDef[] = [
       hemiSky: '#cfe6ff',
       hemiGround: '#8b8172',
       hemiIntensity: 1.0,
-      grass: '#5b8a3c',
+      grass: '#a8a196',
       ground: '#9c9283',
       trees: 0.25,
       treeType: 'palm',

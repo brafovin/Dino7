@@ -11,6 +11,7 @@ import { ALL_DRIVERS, type Driver, getDriver, getTeam, TEAMS, type Team } from '
 import { CURB_WIDTH, Track } from '../shared/track';
 import { getTrackDef } from '../shared/trackDefs';
 import { getDifficulty, type SessionConfig, toPhysicsAssists } from './config';
+import type { ISession } from './ISession';
 
 export type SessionKind = 'race' | 'qualifying' | 'timetrial' | 'practice';
 export type Phase = 'grid' | 'countdown' | 'racing' | 'finished';
@@ -51,6 +52,10 @@ export interface SessionCar {
   nextCompound: Compound;
   slipstream: number;
   quali: number | null;
+  /** Zielzeit geschätzt (Rennen vorzeitig beendet) */
+  estimated?: boolean;
+  /** Mehrspieler: Name des Spielers */
+  playerName?: string;
 }
 
 export type SessionEvent =
@@ -76,12 +81,15 @@ export interface ResultRow {
   pitStops: number;
   penalty: number;
   status: 'Im Ziel' | 'Läuft' | 'DNF';
+  estimated?: boolean;
+  name?: string;
 }
 
 const MARKER_SPACING = 25;
 const STEP_SUBSTEPS = 2;
 
-export class RaceSession {
+export class RaceSession implements ISession {
+  readonly localSim = true;
   readonly cfg: SessionConfig;
   readonly kind: SessionKind;
   readonly track: Track;
@@ -225,7 +233,7 @@ export class RaceSession {
       this.phase = 'grid';
     } else {
       // Outlap: kurz vor der Linie starten
-      const s = this.track.wrapS(-(this.track.pit.entry + 60));
+      const s = this.track.wrapS(-(this.track.def.pit.entry + 60));
       this.player.car.placeAt(this.track, s, this.track.raceLine[this.track.indexAt(s)] * 0.5);
       this.phase = 'racing';
       this.goTime = 0;
@@ -600,8 +608,10 @@ export class RaceSession {
 
   private updateResets(c: SessionCar, dt: number): void {
     const st = c.car.st;
-    if (c.ai && c.ai.wantsReset && !(c.isPlayer && !this.playerAutopilot)) {
+    const pilot = c.isPlayer ? this.playerAutopilot : c.ai;
+    if (pilot && pilot.wantsReset) {
       this.resetCar(c, 0);
+      pilot.onReset();
       return;
     }
     if (c.isPlayer && !this.playerAutopilot && this.cfg.assists.autoReset) {
@@ -633,6 +643,7 @@ export class RaceSession {
       for (const c of this.cars.slice().sort((a, b) => b.progress - a.progress)) {
         if (c.finished) continue;
         c.finished = true;
+        c.estimated = true;
         const remaining = this.totalLaps * L - c.progress;
         const est = (this.time - this.goTime) + (remaining / L) * pace;
         c.finishTime = est;
@@ -680,6 +691,7 @@ export class RaceSession {
         pitStops: c.pitStops,
         penalty: c.penalty,
         status: c.dnf ? 'DNF' : c.finished ? 'Im Ziel' : 'Läuft',
+        estimated: c.estimated,
       };
     });
   }

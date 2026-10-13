@@ -81,7 +81,7 @@ export class LapTracker {
       return out;
     }
     if (this.nextCp < 2) {
-      const c = this.cps[this.nextCp];
+      const c = this.cps[this.nextCp as 0 | 1];
       if (crosses(c)) {
         const t = at(c);
         const idx = this.nextCp as 0 | 1;
